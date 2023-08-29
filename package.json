@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "pack": "wasm-pack build --target web --release",
+    "pack": "wasm-pack build bls-runtime-wasm --target web --release",
     "build:webpack": "webpack",
     "serve:webpack": "webpack serve",
     "dev": "npm run pack && vite --port 8080",
