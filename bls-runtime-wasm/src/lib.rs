@@ -336,7 +336,6 @@ impl Blockless {
             GUEST_INSTANCE = Some(raw_instance.clone());
         }
         self.instance = Some(raw_instance);
-        // TODO:
 
         Ok(())
     }
@@ -365,29 +364,6 @@ impl Blockless {
         };
     }
 
-    // TODO: fix this
-    #[wasm_bindgen(js_name = getImports)]
-    pub fn get_imports(
-        &mut self,
-        module: js_sys::WebAssembly::Module,
-    ) -> Result<js_sys::Object, JsValue> {
-        let module: js_sys::WebAssembly::Module = module.dyn_into().map_err(|_e| {
-            js_sys::Error::new(
-                "You must provide a module to the WASI new. `let module = new WASI({}, module);`",
-            )
-        })?;
-        let instance = js_sys::WebAssembly::Instance::new(&module, &js_sys::Object::new())?;
-        let imports = js_sys::Object::new();
-        // TODO: populate imports
-
-        // js_sys::Reflect::set(
-        //     &imports,
-        //     &"wasi_snapshot_preview1".into(),
-        //     &instance.unchecked_ref(),
-        // )?;
-        Ok(imports)
-    }
-
     #[wasm_bindgen(js_name = hostExports)]
     pub fn host_exports(&self) -> Result<js_sys::Object, JsValue> {
         // let Some(instance) = self.instance.as_ref() else {
@@ -405,5 +381,27 @@ impl Blockless {
         Ok(Object::from_entries(&map.into())?)
     }
 
+    // // TODO: fix this
+    // #[wasm_bindgen(js_name = getImports)]
+    // pub fn get_imports(
+    //     &mut self,
+    //     module: js_sys::WebAssembly::Module,
+    // ) -> Result<js_sys::Object, JsValue> {
+    //     let module: js_sys::WebAssembly::Module = module.dyn_into().map_err(|_e| {
+    //         js_sys::Error::new(
+    //             "You must provide a module to the WASI new. `let module = new WASI({}, module);`",
+    //         )
+    //     })?;
+    //     let instance = js_sys::WebAssembly::Instance::new(&module, &js_sys::Object::new())?;
+    //     let imports = js_sys::Object::new();
+    //     // TODO: populate imports
+
+    //     // js_sys::Reflect::set(
+    //     //     &imports,
+    //     //     &"wasi_snapshot_preview1".into(),
+    //     //     &instance.unchecked_ref(),
+    //     // )?;
+    //     Ok(imports)
+    // }
 }
 
