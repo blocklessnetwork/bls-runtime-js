@@ -1,6 +1,26 @@
 // load host wasm module (isomorphic bls runtime/extensions)
-import init from "../bls-runtime-wasm/pkg";
+import init, { Blockless } from "../bls-runtime-wasm/pkg";
 await init();
+
+const bls = new Blockless({
+    env: {},
+    args: [],
+});
+
+const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
+// const { instance, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), {});
+const module = await WebAssembly.compileStreaming(fetch(wasmPath));
+bls.instantiate(module, {
+    // blockless: {
+    //     host_log: (ptr: number, len: number) => {
+    //         console.log("host_log");
+    //     }
+    // }
+});
+
+const exitCode = bls.start();
+console.log("Exit code: " + exitCode);
+
 
 // // specify imports for the guest wasm module
 // const guestImports = {

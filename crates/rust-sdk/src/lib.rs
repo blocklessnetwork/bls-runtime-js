@@ -79,7 +79,7 @@ pub unsafe fn upper(ptr: *mut u8, len: usize) -> *mut u8 {
 
 // TODO: setup entrypoint
 #[no_mangle]
-pub fn start() {
+pub fn _start() {
     let url = "https://reqres.in/api/products";
     // let url_bytes = url.as_bytes();
 
