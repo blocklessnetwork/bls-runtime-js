@@ -1,6 +1,6 @@
 /// SOURCE: https://radu-matei.com/blog/practical-guide-to-wasm-memory/
 
-#[link(wasm_import_module = "blockless")]
+#[link(wasm_import_module = "browser")]
 extern "C" {
     #[link_name = "host_log"]
     pub fn host_log(ptr: u32, len: u32);

@@ -11,11 +11,11 @@ const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
 // const { instance, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), {});
 const module = await WebAssembly.compileStreaming(fetch(wasmPath));
 bls.instantiate(module, {
-    // blockless: {
-    //     host_log: (ptr: number, len: number) => {
-    //         console.log("host_log");
-    //     }
-    // }
+    browser: {
+        host_log: (ptr: number, len: number) => {
+            console.log("host_log from browser import");
+        },
+    },
 });
 
 const exitCode = bls.start();
