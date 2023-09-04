@@ -1,6 +1,6 @@
 /// SOURCE: https://radu-matei.com/blog/practical-guide-to-wasm-memory/
 
-#[link(wasm_import_module = "browser")]
+#[link(wasm_import_module = "blockless")]
 extern "C" {
     #[link_name = "host_log"]
     pub fn host_log(ptr: u32, len: u32);
@@ -10,6 +10,24 @@ extern "C" {
 extern "C" {
     #[link_name = "host_call"]
     pub fn host_call(ptr: u32, len: u32) -> u32;
+}
+
+// #[link(wasm_import_module = "blockless")]
+// extern "C" {
+//     #[link_name = "host_request"]
+//     pub fn host_request(ptr: u32, len: u32) -> u32;
+// }
+
+// #[link(wasm_import_module = "blockless")]
+// extern "C" {
+//     #[link_name = "host_query"]
+//     pub fn host_query(request_id: u32) -> u32;
+// }
+
+#[link(wasm_import_module = "browser")]
+extern "C" {
+    #[link_name = "run_reqwest"]
+    pub fn run_reqwest(ptr: u32, len: u32) -> u32;
 }
 
 // /// Allocate memory into the module's linear memory
@@ -77,14 +95,31 @@ pub unsafe fn upper(ptr: *mut u8, len: usize) -> *mut u8 {
     ptr
 }
 
-// TODO: setup entrypoint
+// #[no_mangle]
+// pub fn _start() {
+//     let url = "https://reqres.in/api/products";
+//     // let url_bytes = url.as_bytes();
+
+//     let ptr = url.as_ptr() as u32;
+//     let len = url.len() as u32;
+//     unsafe {
+//         let request_id = host_request(ptr, len);
+//         let result_ptr = host_query(request_id);
+//         while result_ptr == 0 {
+//             // wait for the result
+//         }
+//         let result_len = *(result_ptr as *const u8);
+//         host_log(result_ptr + 1, result_len as u32);
+//     }
+// }
+
 #[no_mangle]
 pub fn _start() {
     let url = "https://reqres.in/api/products";
-    // let url_bytes = url.as_bytes();
+    let data = url.as_bytes();
 
-    let ptr = url.as_ptr() as u32;
-    let len = url.len() as u32;
+    let ptr = data.as_ptr() as u32;
+    let len = data.len() as u32;
     unsafe {
         let result_ptr = host_call(ptr, len);
         // 1st byte at result_ptr is the length of the result

@@ -31,63 +31,6 @@ macro_rules! console_error {
 //     console_log!("Host Log: {}", string);
 // }
 
-#[wasm_bindgen]
-struct Exports;
-
-
-// TODO: fix this (dont use unsafe global hacks)
-static mut GUEST_INSTANCE: Option<WebAssembly::Instance> = None;
-
-#[wasm_bindgen]
-impl Exports {
-    // pub fn set_instance(&mut self, instance: WebAssembly::Instance) {
-    //     self.instance = Some(instance);
-    // }
-
-    pub fn host_log(&self, ptr: u32, len: u32) {
-        let instance = unsafe {
-            crate::GUEST_INSTANCE
-                .as_ref()
-                .expect("Guest instance should have been initialized")
-        };
-        // let instance = &self.;
-
-        let data = utils::decode_data_from_memory(instance, ptr, len);
-        let msg = std::str::from_utf8(&data).unwrap();
-
-        console_log!("host_log: {}", msg);
-    }
-    pub fn host_call(&self, ptr: u32, len: u32) -> u32 {// Allocate space in the guest's memory to store the return string
-        let instance = unsafe {
-            crate::GUEST_INSTANCE
-                .as_ref()
-                .expect("Guest instance should have been initialized")
-        };
-        // let instance = &self.0;
-    
-        let data = utils::decode_data_from_memory(instance, ptr, len);
-        let msg = std::str::from_utf8(&data).unwrap();
-        console_log!("host_call: {}", msg);
-
-        // TODO: do something to get a result
-
-        let return_str = "<hello world from host>";
-        let return_bytes = return_str.as_bytes();
-        let result_ptr = utils::encode_data_to_memory(instance, return_bytes);
-        result_ptr
-    }
-}
-
-fn bind(this: &JsValue, func_name: &str) -> Result<(), JsValue> {
-    let property_key = JsValue::from(func_name);
-    let orig_func = Reflect::get(this, &property_key)?.dyn_into::<Function>()?;
-    let func = orig_func.bind(this);
-    if !Reflect::set(this, &property_key, &func)? {
-        return Err(JsValue::from("failed to set property"));
-    }
-    Ok(())
-}
-
 // #[wasm_bindgen]
 // pub async fn run_wasm(wasm_module: &[u8]) -> Result<(), JsValue> {
 //     init_panic_hook();
@@ -127,7 +70,7 @@ fn bind(this: &JsValue, func_name: &str) -> Result<(), JsValue> {
 //     Ok(())
 // }
 
-const WASM: &[u8] = include_bytes!("../../target/wasm32-unknown-unknown/release/rust_sdk.wasm");
+// const WASM: &[u8] = include_bytes!("../../target/wasm32-unknown-unknown/release/rust_sdk.wasm");
 // const WASM: &[u8] = include_bytes!("../../simple.wasm");
 
 // #[wasm_bindgen(start)]
@@ -144,7 +87,7 @@ const WASM: &[u8] = include_bytes!("../../target/wasm32-unknown-unknown/release/
 use bls_common::Products;
 
 #[wasm_bindgen]
-pub async fn run(url: i32) -> Result<JsValue, JsValue> {
+pub async fn run_fetch(url: i32) -> Result<JsValue, JsValue> {
     let mut opts = RequestInit::new();
     opts.method("GET");
     opts.mode(RequestMode::Cors);
@@ -175,6 +118,39 @@ pub async fn run(url: i32) -> Result<JsValue, JsValue> {
 
     Ok(json)
 }
+
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+
+
+async fn do_something_async() -> Vec<u8> {
+    String::from("TESTING!").into_bytes()
+}
+
+// #[wasm_bindgen]
+// pub async fn run_reqwest(url: &str) -> Result<JsValue, JsValue> {
+pub async fn run_reqwest(url: &str) -> Result<Vec<u8>, &'static str> {
+    let res = reqwest::Client::new()
+        .get("https://reqres.in/api/products")
+        // .get(url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|_| "failed to send request")?;
+
+    let bytes = res.bytes().await.map_err(|_| "failed to read response bytes")?;
+    Ok(bytes.to_vec())
+
+    // let products: Products = serde_json::from_slice(&bytes).unwrap();
+    // Ok(serde_wasm_bindgen::to_value(&products).unwrap())
+
+    // let res_str = serde_json::to_string(&products).unwrap();
+    // console_log!("run_reqwest: {}", res_str);
+
+    // let result_bytes = serde_json::to_vec(&products).unwrap();
+    // Ok(result_bytes)
+}
+
 
 #[wasm_bindgen(typescript_custom_section)]
 const WASI_CONFIG_TYPE_DEFINITION: &str = r#"
@@ -269,19 +245,7 @@ impl Blockless {
                     .collect::<Result<Vec<(String, String)>, JsValue>>()?
             }
         };
-        // let fs = {
-        //     let fs = js_sys::Reflect::get(&config, &"fs".into())?;
-        //     if fs.is_undefined() {
-        //         todo!("Use BrowserFS by default");
-        //         // MemFS::new()?
-        //     } else {
-        //         todo!("Use the provided fs");
-        //         // MemFS::from_js(fs)?
-        //     }
-        // };
         Ok(Blockless {
-            // module: None,
-            // instance: None,
             args,
             env,
             preopens,
@@ -304,24 +268,6 @@ impl Blockless {
             // TODO: inject BLS imports
             let instance: WebAssembly::Instance = WebAssembly::Instance::new(&js_module, &combined_imports)?;
             instance
-
-            // let module: Module = js_module.into();
-            // let import_object = self.get_wasi_imports(&module)?;
-            // let imports = if let Some(base_imports) = imports {
-            //     let mut imports =
-            //         Imports::new_from_js_object(&mut self.store, &module, base_imports).map_err(
-            //             |e| js_sys::Error::new(&format!("Failed to get user imports: {}", e)),
-            //         )?;
-            //     imports.extend(&import_object);
-            //     imports
-            // } else {
-            //     import_object
-            // };
-
-            // let instance = Instance::new(&mut self.store, &module, &imports)
-            //     .map_err(|e| js_sys::Error::new(&format!("Failed to instantiate WASI: {}`", e)))?;
-            // self.module = Some(module);
-            // instance
         } else if module_or_instance.has_type::<js_sys::WebAssembly::Instance>() {
             let js_instance: js_sys::WebAssembly::Instance = module_or_instance.unchecked_into();
             js_instance
@@ -331,11 +277,11 @@ impl Blockless {
             );
         };
 
-        // TODO: FIX THIS - storing the instance globally
-        unsafe {
-            GUEST_INSTANCE = Some(raw_instance.clone());
-        }
-        self.instance = Some(raw_instance);
+        // set instance to global value
+        // - allows this to be used in browser imports
+        // - allows this to be used in exported host functions
+        js_sys::Reflect::set(&js_sys::global(), &"instance".into(), &raw_instance)?;
+        self.instance = Some(raw_instance.clone());
 
         Ok(())
     }
@@ -352,7 +298,12 @@ impl Blockless {
 
         let start_func = Reflect::get(&instance.exports(), &"_start".into())?
             .dyn_into::<Function>()
-            .map_err(|_e| js_sys::Error::new("The _start function is not present"))?;
+            .map_err(|_| "The _start function is not present")?;
+
+        // wasm_bindgen_futures::spawn_local(async move {
+        //     start_func.call0(&JsValue::undefined());
+        // });
+        // Ok(0)
 
         let result = start_func.call0(&JsValue::undefined());
         match result {
@@ -366,42 +317,99 @@ impl Blockless {
 
     #[wasm_bindgen(js_name = hostExports)]
     pub fn host_exports(&self) -> Result<js_sys::Object, JsValue> {
-        // let Some(instance) = self.instance.as_ref() else {
-        //     return Err(
-        //         js_sys::Error::new("Module must be instantiated with instance to get host exports").into(),
-        //     );
-        // };
         let map = Map::new();
-        let imports: JsValue  = Exports.into();
 
-        bind(&imports, "host_log")?;
-        bind(&imports, "host_call")?;
+        // TODO: figure out a better way to do this; a map of function names to functions?
+        let exports: JsValue  = Exports.into();
+        bind(&exports, "host_log")?;
+        bind(&exports, "host_call")?;
 
-        map.set(&JsValue::from("blockless"), &imports);
+        map.set(&JsValue::from("blockless"), &exports);
         Ok(Object::from_entries(&map.into())?)
     }
 
-    // // TODO: fix this
-    // #[wasm_bindgen(js_name = getImports)]
-    // pub fn get_imports(
-    //     &mut self,
-    //     module: js_sys::WebAssembly::Module,
-    // ) -> Result<js_sys::Object, JsValue> {
-    //     let module: js_sys::WebAssembly::Module = module.dyn_into().map_err(|_e| {
-    //         js_sys::Error::new(
-    //             "You must provide a module to the WASI new. `let module = new WASI({}, module);`",
-    //         )
-    //     })?;
-    //     let instance = js_sys::WebAssembly::Instance::new(&module, &js_sys::Object::new())?;
-    //     let imports = js_sys::Object::new();
-    //     // TODO: populate imports
-
-    //     // js_sys::Reflect::set(
-    //     //     &imports,
-    //     //     &"wasi_snapshot_preview1".into(),
-    //     //     &instance.unchecked_ref(),
-    //     // )?;
-    //     Ok(imports)
-    // }
 }
 
+fn bind(this: &JsValue, func_name: &str) -> Result<(), JsValue> {
+    let property_key = JsValue::from(func_name);
+    let orig_func = Reflect::get(this, &property_key)?.dyn_into::<Function>()?;
+    let func = orig_func.bind(this);
+    if !Reflect::set(this, &property_key, &func)? {
+        return Err(JsValue::from("failed to set property"));
+    }
+    Ok(())
+}
+
+#[wasm_bindgen]
+struct Exports;
+
+// TODO: fix this (dont use unsafe global hacks)
+// static mut GUEST_INSTANCE: Option<WebAssembly::Instance> = None;
+// static mut HTTP_RESPONSE: Option<Vec<u8>> = None;
+
+// use futures::{channel::mpsc::unbounded, StreamExt};
+
+// use std::{
+//     collections::HashMap,
+//     future::Future,
+//     sync::Mutex,
+//     pin::Pin,
+// };
+// use once_cell::sync::Lazy;
+
+// static mut NEXT_ID: u64 = 0;
+// lazy_static::lazy_static! {
+//     // static ref REQUESTS: Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Response>>>> = Mutex::new(HashMap::new());
+//     static ref REQUESTS:  Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Result<Vec<u8>, &'static str>>>>>> = Mutex::new(HashMap::new());
+// }
+
+#[wasm_bindgen]
+impl Exports {
+    // pub fn set_instance(&mut self, instance: WebAssembly::Instance) {
+    //     self.instance = Some(instance);
+    // }
+
+    pub fn host_log(&self, ptr: u32, len: u32) {
+        // let instance = unsafe {
+        //     crate::GUEST_INSTANCE
+        //         .as_ref()
+        //         .expect("Guest instance should have been initialized")
+        // };
+
+        // get instance from global context
+        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
+            .expect("Guest instance should have been set")
+            .dyn_into::<WebAssembly::Instance>()
+            .unwrap();
+    
+        let data = utils::decode_data_from_memory(&instance, ptr, len);
+        let msg = std::str::from_utf8(&data).unwrap();
+    
+        console_log!("host_log: {}", msg);
+    }
+
+    pub fn host_call(&self, ptr: u32, len: u32) -> u32 {// Allocate space in the guest's memory to store the return string
+        // let instance = unsafe {
+        //     crate::GUEST_INSTANCE
+        //         .as_ref()
+        //         .expect("Guest instance should have been initialized")
+        // };
+
+        // get instance from global context
+        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
+            .expect("Guest instance should have been set")
+            .dyn_into::<WebAssembly::Instance>()
+            .unwrap();
+        
+        let call_data = utils::decode_data_from_memory(&instance, ptr, len);
+        // TODO: deserialize this to a canonical format
+        let msg = std::str::from_utf8(&call_data).unwrap();
+        console_log!("host_call: {}", msg);
+
+        let return_str = "<hello world from host>";
+        let return_bytes = return_str.as_bytes();
+        
+        let result_ptr = utils::encode_data_to_memory(&instance, return_bytes);
+        result_ptr
+    }
+}

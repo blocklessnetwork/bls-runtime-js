@@ -12,15 +12,18 @@ const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
 const module = await WebAssembly.compileStreaming(fetch(wasmPath));
 bls.instantiate(module, {
     browser: {
-        host_log: (ptr: number, len: number) => {
-            console.log("host_log from browser import");
+        run_reqwest: (ptr: number, len: number) => {
+            const instance = (globalThis as any).instance; // global variable value set by bls.instantiate
+            console.info("run_reqwest from browser import");
+            const memory = new Uint8Array((instance.exports.memory as any).buffer, ptr, len);
+            const url = new TextDecoder().decode(memory);
+            console.info(url);
         },
     },
 });
 
 const exitCode = bls.start();
 console.log("Exit code: " + exitCode);
-
 
 // // specify imports for the guest wasm module
 // const guestImports = {
