@@ -1,7 +1,7 @@
 use js_sys::{Function, Map, Object, Reflect, WebAssembly};
 use wasm_bindgen::{prelude::{wasm_bindgen, JsCast, JsValue}, JsError};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, RequestMode, Response};
+use web_sys::{Request, RequestInit, RequestMode, Response, console};
 
 mod utils;
 
@@ -84,7 +84,6 @@ macro_rules! console_error {
 // }
 
 // {"page":1,"per_page":6,"total":12,"total_pages":2,"data":[{"id":1,"name":"cerulean","year":2000,"color":"#98B2D1","pantone_value":"15-4020"},{"id":2,"name":"fuchsia rose","year":2001,"color":"#C74375","pantone_value":"17-2031"},{"id":3,"name":"true red","year":2002,"color":"#BF1932","pantone_value":"19-1664"},{"id":4,"name":"aqua sky","year":2003,"color":"#7BC4C4","pantone_value":"14-4811"},{"id":5,"name":"tigerlily","year":2004,"color":"#E2583E","pantone_value":"17-1456"},{"id":6,"name":"blue turquoise","year":2005,"color":"#53B0AE","pantone_value":"15-5217"}],"support":{"url":"https://reqres.in/#support-heading","text":"To keep ReqRes free, contributions towards server costs are appreciated!"}}
-use bls_common::Products;
 
 #[wasm_bindgen]
 pub async fn run_fetch(url: i32) -> Result<JsValue, JsValue> {
@@ -131,8 +130,8 @@ async fn do_something_async() -> Vec<u8> {
 // pub async fn run_reqwest(url: &str) -> Result<JsValue, JsValue> {
 pub async fn run_reqwest(url: &str) -> Result<Vec<u8>, &'static str> {
     let res = reqwest::Client::new()
-        .get("https://reqres.in/api/products")
-        // .get(url)
+        // .get("https://reqres.in/api/products")
+        .get(url)
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
@@ -141,7 +140,7 @@ pub async fn run_reqwest(url: &str) -> Result<Vec<u8>, &'static str> {
     let bytes = res.bytes().await.map_err(|_| "failed to read response bytes")?;
     Ok(bytes.to_vec())
 
-    // let products: Products = serde_json::from_slice(&bytes).unwrap();
+    // let products: bls_common::Products = serde_json::from_slice(&bytes).unwrap();
     // Ok(serde_wasm_bindgen::to_value(&products).unwrap())
 
     // let res_str = serde_json::to_string(&products).unwrap();
@@ -340,6 +339,7 @@ fn bind(this: &JsValue, func_name: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
+
 #[wasm_bindgen]
 struct Exports;
 
@@ -362,6 +362,8 @@ struct Exports;
 //     // static ref REQUESTS: Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Response>>>> = Mutex::new(HashMap::new());
 //     static ref REQUESTS:  Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Result<Vec<u8>, &'static str>>>>>> = Mutex::new(HashMap::new());
 // }
+
+use bls_common::{types::{ModuleCall, ModuleCallResponse}, http::HttpResponse};
 
 #[wasm_bindgen]
 impl Exports {
@@ -388,7 +390,7 @@ impl Exports {
         console_log!("host_log: {}", msg);
     }
 
-    pub fn host_call(&self, ptr: u32, len: u32) -> u32 {// Allocate space in the guest's memory to store the return string
+    pub fn host_call(&self, ptr: u32, len: u32) -> u32 { // Allocate space in the guest's memory to store the return string
         // let instance = unsafe {
         //     crate::GUEST_INSTANCE
         //         .as_ref()
@@ -402,13 +404,61 @@ impl Exports {
             .unwrap();
         
         let call_data = utils::decode_data_from_memory(&instance, ptr, len);
-        // TODO: deserialize this to a canonical format
-        let msg = std::str::from_utf8(&call_data).unwrap();
-        console_log!("host_call: {}", msg);
+        // console_log!("host_call: {}", std::str::from_utf8(&call_data).unwrap());
 
-        let return_str = "<hello world from host>";
+        // deserialize this to a canonical format
+        let call = serde_json::from_slice::<ModuleCall>(&call_data).unwrap();
+        call.validate_permissions(); // TODO: pass in config
+        match call {
+            ModuleCall::Http(http_req) => {
+                console_log!("host_call: http_request called: {}", http_req);
+
+                let blockless_callback = Reflect::get(&instance.exports(), &"blockless_callback".into())
+                    .expect("callback export wasn't found")
+                    .dyn_into::<Function>()
+                    .expect("The blockless_callback function is not present");
+
+                // async callback into guest with the result
+                wasm_bindgen_futures::spawn_local(async move {
+                    let module_call_response = match http_req.request().await {
+                        Ok(response) => {
+                            match HttpResponse::from_reqwest(response).await {
+                                Ok(res) => ModuleCallResponse::Http(Ok(res)),
+                                Err(_) => ModuleCallResponse::Http(Err("failed to parse response".into())),
+                            }
+                        },
+                        Err(err) => {
+                            console_error!("Error while running start function: {}", err);
+                            ModuleCallResponse::Http(Err(err.to_string()))
+                        }
+                    };
+                    let result_bytes = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
+                    let result_ptr = utils::encode_data_to_memory(&instance, &result_bytes);
+
+                    // TODO: fix error being thrown on callback
+                    match blockless_callback.call1(&JsValue::undefined(), &JsValue::from(result_ptr)) {
+                        Ok(_) => console_log!("blockless_callback called successfully"),
+                        Err(err) => console_error!("Error while running blockless_callback {}", err.as_string().unwrap_or_default()),
+                    };
+                });
+            },
+            ModuleCall::Ipfs(ipfs_get) => {
+                console_log!("host_call: ipfs_get called: {}", ipfs_get);
+                // TODO: validate guest has exported function to callback into
+                // TODO: perform the request in spawn_local
+                // TODO: callback into guest with the result (in spawn_local)
+            },
+        };
+
+        // TODO: serialize a canonical response format to end back to client
+        let return_str = "<hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host>";
         let return_bytes = return_str.as_bytes();
-        
+
+        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
+            .expect("Guest instance should have been set")
+            .dyn_into::<WebAssembly::Instance>()
+            .unwrap();
+
         let result_ptr = utils::encode_data_to_memory(&instance, return_bytes);
         result_ptr
     }

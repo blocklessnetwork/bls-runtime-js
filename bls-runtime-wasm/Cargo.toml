@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # rust-sdk = { path = "../crates/rust-sdk" }
-bls-common = { path = "../crates/bls-common" }
+bls-common = { path = "../crates/bls-common", features = ["use_wasm_bindgen"] }
 wasm-bindgen = { version = "0.2.74", features = ["serde-serialize"]  }
 js-sys = "0.3.51"
 wasm-bindgen-futures = "0.4.24"
