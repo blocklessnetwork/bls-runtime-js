@@ -1,5 +1,7 @@
 /// SOURCE: https://radu-matei.com/blog/practical-guide-to-wasm-memory/
 
+mod utils;
+
 #[link(wasm_import_module = "blockless")]
 extern "C" {
     #[link_name = "host_log"]
@@ -96,35 +98,89 @@ pub unsafe fn upper(ptr: *mut u8, len: usize) -> *mut u8 {
 }
 
 // #[no_mangle]
-// pub fn _start() {
-//     let url = "https://reqres.in/api/products";
-//     // let url_bytes = url.as_bytes();
+// pub unsafe fn blockless_callback(ptr: *const u8) {
+//     let result_len = *(ptr as *const u8);
+//     let (result_ptr, result_len) = (ptr as u32 + 1, result_len as u32);
+//     host_log(result_ptr, result_len);
+// }
 
+#[no_mangle]
+pub fn blockless_callback(result_ptr: u32) -> u32 {
+    let serialized = unsafe {
+         // first 4 bytes at result_ptr represent the length of the result (as u32)
+        let result_len = *(result_ptr as *const u32); // directly dereference to u32
+
+        // assuming the host and guest have the same endianness
+        let result_len = u32::from_le(result_len); 
+
+        // log the result; data starts at `result_ptr + 4` because the first 4 bytes are used to store the length
+        let pointer = result_ptr + 4;
+        // host_log(pointer, result_len);
+
+        Vec::from_raw_parts(pointer as *mut u8, result_len as usize, result_len as usize)
+    };
+    let deserialized: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap();
+    log!("{}", deserialized.to_string());
+    0
+}
+
+// #[no_mangle]
+// pub fn _start() {
+//     let url = "https://reqres.in/api/products".as_bytes();;
 //     let ptr = url.as_ptr() as u32;
 //     let len = url.len() as u32;
 //     unsafe {
-//         let request_id = host_request(ptr, len);
-//         let result_ptr = host_query(request_id);
-//         while result_ptr == 0 {
-//             // wait for the result
-//         }
+//         let result_ptr = host_call(ptr, len);
+//         // 1st byte at result_ptr is the length of the result
 //         let result_len = *(result_ptr as *const u8);
 //         host_log(result_ptr + 1, result_len as u32);
 //     }
 // }
 
+use bls_common::{
+    http::{HttpReqParams, HttpReqOpts},
+    types::{ModuleCall, ModuleCallResponse},
+};
+
 #[no_mangle]
 pub fn _start() {
-    let url = "https://reqres.in/api/products";
-    let data = url.as_bytes();
+    let http_req = ModuleCall::Http(HttpReqParams {
+        url: "https://jsonplaceholder.typicode.com/todos/1".into(),
+        opts: HttpReqOpts {
+            method: "GET".to_string(),
+            connect_timeout: Some(30),
+            read_timeout: Some(10),
+            headers: None,
+            body: None,
+        },
+    });
+    // let serialized = serde_json::to_string(&http_req).unwrap();
+    // log!("{}", serialized);
 
+    // let deserialized: ModuleCall = serde_json::from_str(&serialized).unwrap();
+    // log!("{}", deserialized.to_string());
+
+    // create a `Vec<u8>` from the pointer and length
+    let data = serde_json::to_vec(&http_req).unwrap();
     let ptr = data.as_ptr() as u32;
     let len = data.len() as u32;
+    // unsafe {
+    //     let result_ptr = host_call(ptr, len);
+    //     // 1st byte at result_ptr is the length of the result
+    //     let result_len = *(result_ptr as *const u8);
+    //     host_log(result_ptr + 1, result_len as u32);
+    // }
     unsafe {
         let result_ptr = host_call(ptr, len);
-        // 1st byte at result_ptr is the length of the result
-        let result_len = *(result_ptr as *const u8);
-        host_log(result_ptr + 1, result_len as u32);
+    
+        // first 4 bytes at result_ptr represent the length of the result (as u32)
+        let result_len = *(result_ptr as *const u32); // directly dereference to u32
+
+        // assuming the host and guest have the same endianness
+        let result_len = u32::from_le(result_len); 
+
+        // log the result; data starts at `result_ptr + 4` because the first 4 bytes are used to store the length
+        host_log(result_ptr + 4, result_len);
     }
 }
 
