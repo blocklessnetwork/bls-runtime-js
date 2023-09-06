@@ -4,66 +4,106 @@ use serde::{Deserialize, Serialize};
 use crate::impl_display_via_json;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HttpReqParams {
-  pub url: String,
-  pub opts: HttpReqOpts,
+pub enum Method {
+  Get,
+  Post,
+  Put,
+  Delete,
+  Head,
+  Trace,
 }
 
-impl HttpReqParams {
+impl Default for Method {
+  fn default() -> Self { Method::Get }
+}
+
+impl AsRef<[u8]> for Method {
+  fn as_ref(&self) -> &[u8] {
+    match self {
+      Method::Get => b"get",
+      Method::Post => b"post",
+      Method::Put => b"put",
+      Method::Delete => b"delete",
+      Method::Head => b"head",
+      Method::Trace => b"trace",
+    }
+  }
+}
+
+impl TryFrom<&str> for Method {
+  type Error = &'static str;
+  fn try_from(value: &str) -> Result<Self, Self::Error> {
+    match value.to_lowercase().as_str() {
+      "get" => Ok(Method::Get),
+      "post" => Ok(Method::Post),
+      "put" => Ok(Method::Put),
+      "delete" => Ok(Method::Delete),
+      "head" => Ok(Method::Head),
+      "trace" => Ok(Method::Trace),
+      _ => Err("Invalid method name"),
+    }
+  }
+}
+
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct HttpRequest {
+  pub url: String,
+  pub method: Method,
+  pub headers: Option<HashMap<String, String>>,
+  pub body: Option<String>,
+  // pub timeout: Option<u64>, // NOTE: timeout does not work in wasm
+}
+
+impl HttpRequest {
+  pub fn new(url: &str, method: Method) -> Self {
+    Self {
+      url: url.into(),
+      method,
+      ..Default::default()
+    }
+  }
+
   #[cfg(feature = "use_wasm_bindgen")]
   pub async fn request(&self) -> Result<reqwest::Response, &'static str> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(header_map) = &self.opts.headers {
-      headers = header_map.try_into().expect("valid headers");
-    };
-
-    let mut client_builder = reqwest::ClientBuilder::new();
-
-    if let Some(ct) = self.opts.connect_timeout {
-      // client_builder = client_builder.connect_timeout(std::time::Duration::from_secs(ct));
-    }
-    if let Some(rt) = self.opts.read_timeout {
-      // client_builder = client_builder.timeout(std::time::Duration::from_secs(rt));
-    }
-    let client = client_builder.build().unwrap();
-    // TODO: use client.execute - rather than manually building the request
-    // TODO: can we simply use the `Request` struct from the execute in the common types?
-    let req_builder = match self.opts.method.to_lowercase().as_str() {
-      "head" => client.head(&self.url),
-      "get" => client.get(&self.url),
-      "post" => client.post(&self.url),
-      "delete" => client.delete(&self.url),
-      "put" => client.put(&self.url),
-      "patch" => client.patch(&self.url),
-      _ => return Err("request method not supported"),
-    };
-    let resp = req_builder
-      .headers(headers)
-      .body(self.opts.body.clone().unwrap_or_default())
-      .send()
-      .await
-      .map_err(|e| {
-          // error!("request send error, {}", e);
-          "request send error"
-      })?;
+    let request: reqwest::Request = self.to_owned().try_into()?;
+    let resp = reqwest::Client::new().execute(request).await.map_err(|e| {
+      // error!("request send error, {}", e);
+      "request send error"
+    })?;
     Ok(resp)
   }
 }
 
-impl_display_via_json!(HttpReqParams);
+#[cfg(feature = "use_wasm_bindgen")]
+impl TryInto<reqwest::Request> for HttpRequest {
+  type Error = &'static str;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HttpReqOpts {
-  pub method: String,
-  pub headers: Option<HashMap<String, String>>, // This could be a HashMap<String, String> for more structured headers
-  pub body: Option<String>,
-  #[serde(rename = "connectTimeout")]
-  pub connect_timeout: Option<u64>,
-  #[serde(rename = "readTimeout")]
-  pub read_timeout: Option<u64>,
+  fn try_into(self) -> Result<reqwest::Request, Self::Error> {
+    let url = reqwest::Url::parse(&self.url).map_err(|_| "invalid url")?;
+    let method = reqwest::Method::from_bytes(self.method.as_ref())
+      .map_err(|_| "invalid method")?;
+
+    let mut request = reqwest::Request::new(method, url);
+
+    if let Some(headers) = &self.headers {
+      let header_map: reqwest::header::HeaderMap = headers.try_into().expect("valid headers");
+      request.headers_mut().extend(header_map.into_iter());
+    };
+    if let Some(body) = self.body {
+      request.body_mut().replace(body.into());
+    }
+
+    // NOTE: timeout does not work in wasm
+    // if let Some(timeout) = self.timeout {
+    //   request.timeout_mut().replace(core::time::Duration::from_secs(timeout));
+    // }
+
+    Ok(request)
+  }
 }
 
-impl_display_via_json!(HttpReqOpts);
+impl_display_via_json!(HttpRequest);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpResponse {
@@ -73,6 +113,7 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+  // NOTE: cannot use `impl TryFrom<reqwest::Response> for HttpResponse` because reading body is async
   #[cfg(feature = "use_wasm_bindgen")]
   pub async fn from_reqwest(resp: reqwest::Response) -> Result<Self, String> {
     let mut headers = HashMap::new();

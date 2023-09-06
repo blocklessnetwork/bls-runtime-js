@@ -1,4 +1,4 @@
-use crate::http::{HttpReqParams, HttpResponse};
+use crate::http::{HttpRequest, HttpResponse};
 use crate::ipfs::{IpfsGetParams, IpfsResponse};
 use crate::impl_display_via_json;
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "module", content = "params")]
 pub enum ModuleCall {
-  Http(HttpReqParams),
+  Http(HttpRequest),
   Ipfs(IpfsGetParams),
   // TODO: Add more modules here
 }
@@ -17,7 +17,7 @@ impl ModuleCall {
   // - use dependency injection or some generic approach to get the config (permissions) - must be isomorphic
   pub fn validate_permissions(&self) -> bool {
     match self {
-      ModuleCall::Http(HttpReqParams { url, .. }) => {
+      ModuleCall::Http(HttpRequest { url, .. }) => {
         // TODO: validate permissions logic
       },
       ModuleCall::Ipfs(IpfsGetParams { cid }) => {

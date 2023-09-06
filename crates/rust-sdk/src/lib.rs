@@ -138,22 +138,14 @@ pub fn blockless_callback(result_ptr: u32) -> u32 {
 // }
 
 use bls_common::{
-    http::{HttpReqParams, HttpReqOpts},
+    http::{Method, HttpRequest},
     types::{ModuleCall, ModuleCallResponse},
 };
 
 #[no_mangle]
 pub fn _start() {
-    let http_req = ModuleCall::Http(HttpReqParams {
-        url: "https://jsonplaceholder.typicode.com/todos/1".into(),
-        opts: HttpReqOpts {
-            method: "GET".to_string(),
-            connect_timeout: Some(30),
-            read_timeout: Some(10),
-            headers: None,
-            body: None,
-        },
-    });
+    let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
+    let http_call = ModuleCall::Http(req);
     // let serialized = serde_json::to_string(&http_req).unwrap();
     // log!("{}", serialized);
 
@@ -161,7 +153,7 @@ pub fn _start() {
     // log!("{}", deserialized.to_string());
 
     // create a `Vec<u8>` from the pointer and length
-    let data = serde_json::to_vec(&http_req).unwrap();
+    let data = serde_json::to_vec(&http_call).unwrap();
     let ptr = data.as_ptr() as u32;
     let len = data.len() as u32;
     // unsafe {
