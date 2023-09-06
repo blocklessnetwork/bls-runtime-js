@@ -1,9 +1,9 @@
 use js_sys::{Function, Map, Object, Reflect, WebAssembly};
 use wasm_bindgen::{prelude::{wasm_bindgen, JsCast, JsValue}, JsError};
-use wasm_bindgen_futures::JsFuture;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{Request, RequestInit, RequestMode, Response, console};
 
-mod utils;
+pub mod utils;
 
 // https://github.com/rustwasm/console_error_panic_hook
 #[wasm_bindgen]

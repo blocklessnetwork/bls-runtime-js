@@ -26,11 +26,11 @@ extern "C" {
 //     pub fn host_query(request_id: u32) -> u32;
 // }
 
-#[link(wasm_import_module = "browser")]
-extern "C" {
-    #[link_name = "run_reqwest"]
-    pub fn run_reqwest(ptr: u32, len: u32) -> u32;
-}
+// #[link(wasm_import_module = "browser")]
+// extern "C" {
+//     #[link_name = "run_reqwest"]
+//     pub fn run_reqwest(ptr: u32, len: u32) -> u32;
+// }
 
 // /// Allocate memory into the module's linear memory
 // /// and return the offset to the start of the block.
@@ -96,13 +96,6 @@ pub unsafe fn upper(ptr: *mut u8, len: usize) -> *mut u8 {
     // so the runtime can read data from this offset
     ptr
 }
-
-// #[no_mangle]
-// pub unsafe fn blockless_callback(ptr: *const u8) {
-//     let result_len = *(ptr as *const u8);
-//     let (result_ptr, result_len) = (ptr as u32 + 1, result_len as u32);
-//     host_log(result_ptr, result_len);
-// }
 
 #[no_mangle]
 pub fn blockless_callback(result_ptr: u32) -> u32 {
