@@ -1,11 +1,23 @@
 // load host wasm module (isomorphic bls runtime/extensions)
-import init, { Blockless } from "../bls-runtime-wasm/pkg";
+import init, { Blockless, BlocklessConfig } from "../bls-runtime-wasm/pkg";
 await init();
 
-const bls = new Blockless({
+const config: BlocklessConfig = {
     env: {},
     args: [],
-});
+    // "fs_root_path": "/", 
+    // "drivers_root_path": "/drivers", 
+    // "runtime_logger": "runtime.log", 
+    // "limited_fuel": 200000000,
+    // "limited_memory": 30,
+    // "debug_info": false,
+    // "entry": "lib.wasm",
+    permissions: [
+        "http://httpbin.org/anything",
+        "file://a.go"
+    ],
+};
+const bls = new Blockless(config);
 
 const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
 // const { instance, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), {});

@@ -152,15 +152,17 @@ pub async fn run_reqwest(url: &str) -> Result<Vec<u8>, &'static str> {
 
 
 #[wasm_bindgen(typescript_custom_section)]
-const WASI_CONFIG_TYPE_DEFINITION: &str = r#"
+const BLOCKLESS_CONFIG_TYPE_DEFINITION: &str = r#"
 /** Options used when configuring a new WASI instance.  */
-export type WasiConfig = {
+export type BlocklessConfig = {
     /** The command-line arguments passed to the WASI executable. */
     readonly args?: string[];
     /** Additional environment variables made available to the WASI executable. */
     readonly env?: Record<string, string>;
     /** Preopened directories. */
     readonly preopens?: Record<string, string>;
+    /** Additional permissions. */
+    readonly permissions?: string[];
     /** The in-memory filesystem that should be used. */
     readonly fs?: MemFS;
 };
@@ -168,8 +170,8 @@ export type WasiConfig = {
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "WasiConfig")]
-    pub type WasiConfig;
+    #[wasm_bindgen(typescript_type = "BlocklessConfig")]
+    pub type BlocklessConfig;
 }
 
 #[wasm_bindgen]
@@ -179,6 +181,7 @@ pub struct Blockless {
     args: Vec<String>,
     env: Vec<(String, String)>,
     preopens: Vec<(String, String)>,
+    permissions: Vec<String>,
     // fs: BrowserFS,
     instance: Option<WebAssembly::Instance>,
 }
@@ -186,7 +189,7 @@ pub struct Blockless {
 #[wasm_bindgen]
 impl Blockless {
     #[wasm_bindgen(constructor)]
-    pub fn new(config: WasiConfig) -> Result<Blockless, JsValue> {
+    pub fn new(config: BlocklessConfig) -> Result<Blockless, JsValue> {
         let args: Vec<String> = {
             let args = js_sys::Reflect::get(&config, &"args".into())?;
             if args.is_undefined() {
@@ -244,10 +247,27 @@ impl Blockless {
                     .collect::<Result<Vec<(String, String)>, JsValue>>()?
             }
         };
+        let permissions = {
+            let permissions = js_sys::Reflect::get(&config, &"permissions".into())?;
+            if permissions.is_undefined() {
+                vec![]
+            } else {
+                let permissions_array: js_sys::Array = permissions.dyn_into()?;
+                permissions_array
+                    .iter()
+                    .map(|permission| {
+                        permission
+                            .as_string()
+                            .ok_or(js_sys::Error::new("All permissions must be strings").into())
+                    })
+                    .collect::<Result<Vec<String>, JsValue>>()?
+            }
+        };
         Ok(Blockless {
             args,
             env,
             preopens,
+            permissions,
             // fs,
             instance: None,
         })
