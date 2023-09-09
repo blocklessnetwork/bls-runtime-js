@@ -13,6 +13,7 @@ const config: BlocklessConfig = {
     // "debug_info": false,
     // "entry": "lib.wasm",
     permissions: [
+        "https://jsonplaceholder.typicode.com/todos/1",
         "http://httpbin.org/anything",
         "file://a.go"
     ],

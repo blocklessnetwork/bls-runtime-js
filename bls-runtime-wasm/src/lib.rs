@@ -122,10 +122,6 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 
-async fn do_something_async() -> Vec<u8> {
-    String::from("TESTING!").into_bytes()
-}
-
 // #[wasm_bindgen]
 // pub async fn run_reqwest(url: &str) -> Result<JsValue, JsValue> {
 pub async fn run_reqwest(url: &str) -> Result<Vec<u8>, &'static str> {
@@ -351,7 +347,7 @@ impl Blockless {
 
         let instance_arc = self.0.clone();
         let host_call_fn = Closure::wrap(Box::new(move |ptr: u32, len: u32| {
-            let Some(ref instance) = (*instance_arc.borrow()).instance else {
+            let Some(ref _instance) = (*instance_arc.borrow()).instance else {
                 console_error!("Guest instance should have been set");
                 return 0;
             };
@@ -384,6 +380,7 @@ pub fn host_call(config: Arc<RefCell<Config>>, ptr: u32, len: u32) -> u32 { // A
     // get the instance again - using interior mutability
     let cfg = config.borrow();
     let instance = cfg.instance.as_ref().expect("Guest instance should have been set");
+    let permissions = &cfg.permissions;
 
     let call_data = utils::decode_data_from_memory(&instance, ptr, len);
     // console_log!("host_call: {}", std::str::from_utf8(&call_data).unwrap());
@@ -400,8 +397,19 @@ pub fn host_call(config: Arc<RefCell<Config>>, ptr: u32, len: u32) -> u32 { // A
                 .dyn_into::<Function>()
                 .expect("The blockless_callback function is not present");
 
+            if !http_req.valid_permissions(permissions) {
+                let result_bytes = serde_json::to_vec(&ModuleCallResponse::Http(Err("invalid permissions".into())))
+                    .expect("failed to serialize module call response");
+                let result_ptr = utils::encode_data_to_memory(instance, &result_bytes);
+                return result_ptr;
+            }
+
             let cfg_ptr = config.clone();
             wasm_bindgen_futures::spawn_local(async move {
+                // get the instance again - using interior mutability
+                let cfg = cfg_ptr.borrow();
+                let instance = cfg.instance.as_ref().expect("Guest instance should have been set");
+
                 let module_call_response = match http_req.request().await {
                     Ok(response) => {
                         match HttpResponse::from_reqwest(response).await {
@@ -415,11 +423,6 @@ pub fn host_call(config: Arc<RefCell<Config>>, ptr: u32, len: u32) -> u32 { // A
                     }
                 };
                 let result_bytes = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
-                
-                // get the instance again - using interior mutability
-                let cfg = cfg_ptr.borrow();
-                let instance = cfg.instance.as_ref().expect("Guest instance should have been set");
-
                 let result_ptr = utils::encode_data_to_memory(instance, &result_bytes);
 
                 // TODO: fix error being thrown on callback

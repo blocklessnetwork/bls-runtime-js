@@ -64,6 +64,15 @@ impl HttpRequest {
     }
   }
 
+  pub fn valid_permissions(&self, permissions: &[String]) -> bool {
+    // return true if url (to lower) starts with permissions (lower case)
+    let url = self.url.to_ascii_lowercase();
+    permissions
+      .iter()
+      .any(|p| url.starts_with(&p.to_lowercase()))
+  }
+    
+
   #[cfg(feature = "use_wasm_bindgen")]
   pub async fn request(&self) -> Result<reqwest::Response, &'static str> {
     let request: reqwest::Request = self.to_owned().try_into()?;
