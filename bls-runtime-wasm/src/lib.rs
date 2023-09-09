@@ -317,11 +317,6 @@ impl Blockless {
             .dyn_into::<Function>()
             .map_err(|_| "The _start function is not present")?;
 
-        // wasm_bindgen_futures::spawn_local(async move {
-        //     start_func.call0(&JsValue::undefined());
-        // });
-        // Ok(0)
-
         let result = start_func.call0(&JsValue::undefined());
         match result {
             Ok(_) => return Ok(0),

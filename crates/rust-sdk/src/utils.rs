@@ -11,12 +11,12 @@ fn log(msg: &str) {
 #[macro_export]
 macro_rules! log {
   ($($t:tt)*) => {
-      let msg = &format_args!($($t)*).to_string();
-      let msg_bytes = msg.as_bytes();
-      let ptr = msg_bytes.as_ptr() as u32;
-      let len = msg_bytes.len() as u32;
-      unsafe {
-          host_log(ptr, len);
-      }
+    let msg = &format_args!($($t)*).to_string();
+    let msg_bytes = msg.as_bytes();
+    let ptr = msg_bytes.as_ptr() as u32;
+    let len = msg_bytes.len() as u32;
+    unsafe {
+      host_log(ptr, len);
+    }
   }
 }

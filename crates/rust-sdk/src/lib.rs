@@ -98,7 +98,7 @@ pub unsafe fn upper(ptr: *mut u8, len: usize) -> *mut u8 {
 }
 
 #[no_mangle]
-pub fn blockless_callback(result_ptr: u32) -> u32 {
+pub fn blockless_callback(result_ptr: usize) -> *const u8 {
     let serialized = unsafe {
          // first 4 bytes at result_ptr represent the length of the result (as u32)
         let result_len = *(result_ptr as *const u32); // directly dereference to u32
@@ -108,13 +108,12 @@ pub fn blockless_callback(result_ptr: u32) -> u32 {
 
         // log the result; data starts at `result_ptr + 4` because the first 4 bytes are used to store the length
         let pointer = result_ptr + 4;
-        // host_log(pointer, result_len);
-
         Vec::from_raw_parts(pointer as *mut u8, result_len as usize, result_len as usize)
     };
     let deserialized: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap();
     log!("{}", deserialized.to_string());
-    0
+
+    return 0 as *const u8;
 }
 
 // #[no_mangle]
