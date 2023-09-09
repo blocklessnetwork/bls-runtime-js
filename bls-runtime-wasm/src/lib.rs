@@ -174,10 +174,12 @@ extern "C" {
     pub type BlocklessConfig;
 }
 
-#[wasm_bindgen]
-pub struct Blockless {
+use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+
+#[derive(Debug, Clone)]
+pub struct Config {
     // module: Option<Module>,
-    // instance: Option<Instance>,
     args: Vec<String>,
     env: Vec<(String, String)>,
     preopens: Vec<(String, String)>,
@@ -185,6 +187,10 @@ pub struct Blockless {
     // fs: BrowserFS,
     instance: Option<WebAssembly::Instance>,
 }
+
+#[derive(Debug, Clone)]
+#[wasm_bindgen]
+pub struct Blockless(Arc<RefCell<Config>>);
 
 #[wasm_bindgen]
 impl Blockless {
@@ -263,14 +269,16 @@ impl Blockless {
                     .collect::<Result<Vec<String>, JsValue>>()?
             }
         };
-        Ok(Blockless {
+
+        let config = Config {
             args,
             env,
             preopens,
             permissions,
             // fs,
             instance: None,
-        })
+        };
+        Ok(Blockless(Arc::new(RefCell::new(config))))
     }
 
     pub fn instantiate(
@@ -279,12 +287,10 @@ impl Blockless {
         imports: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
         let raw_instance = if module_or_instance.has_type::<js_sys::WebAssembly::Module>() {
-            // js_sys::Error::new("Module not supported").into()?;
             let js_module: js_sys::WebAssembly::Module = module_or_instance.unchecked_into();
             let host_exports = self.host_exports()?;
             let guest_imports = imports.unwrap_or_else(|| js_sys::Object::new());
             let combined_imports = js_sys::Object::assign(&host_exports, &guest_imports);
-            // TODO: inject BLS imports
             let instance: WebAssembly::Instance = WebAssembly::Instance::new(&js_module, &combined_imports)?;
             instance
         } else if module_or_instance.has_type::<js_sys::WebAssembly::Instance>() {
@@ -296,11 +302,7 @@ impl Blockless {
             );
         };
 
-        // set instance to global value
-        // - allows this to be used in browser imports
-        // - allows this to be used in exported host functions
-        js_sys::Reflect::set(&js_sys::global(), &"instance".into(), &raw_instance)?;
-        self.instance = Some(raw_instance.clone());
+        self.0.borrow_mut().instance = Some(raw_instance);
 
         Ok(())
     }
@@ -309,7 +311,7 @@ impl Blockless {
     pub fn start(
         &mut self,
     ) -> Result<u32, JsValue> {
-        let Some(instance) = self.instance.as_ref() else {
+        let Some(instance) = &self.0.borrow().instance else {
             return Err(
                 js_sys::Error::new("You need to provide an instance as argument to `start`, or call `wasi.instantiate` with the `WebAssembly.Instance` manually").into(),
             );
@@ -336,150 +338,109 @@ impl Blockless {
 
     #[wasm_bindgen(js_name = hostExports)]
     pub fn host_exports(&self) -> Result<js_sys::Object, JsValue> {
+        let blockless_exports: JsValue = Object::new().into();
+
+        let instance_arc = self.0.clone();
+        let log_fn = Closure::wrap(Box::new(move |ptr: u32, len: u32| {
+            let Some(ref instance) = (*instance_arc.borrow()).instance else {
+                console_error!("Guest instance should have been set");
+                return;
+            };
+            host_log(instance, ptr, len)
+        }) as Box<dyn FnMut(u32, u32)>);
+
+        let instance_arc = self.0.clone();
+        let host_call_fn = Closure::wrap(Box::new(move |ptr: u32, len: u32| {
+            let Some(ref instance) = (*instance_arc.borrow()).instance else {
+                console_error!("Guest instance should have been set");
+                return 0;
+            };
+
+            host_call(instance_arc.clone(), ptr, len)
+        }) as Box<dyn FnMut(u32, u32) -> u32>);
+
+        js_sys::Reflect::set(&blockless_exports, &JsValue::from("host_log"), log_fn.as_ref().unchecked_ref())?;
+        log_fn.forget();
+
+        js_sys::Reflect::set(&blockless_exports, &JsValue::from("host_call"), host_call_fn.as_ref().unchecked_ref())?;
+        host_call_fn.forget();
+        
         let map = Map::new();
-
-        // TODO: figure out a better way to do this; a map of function names to functions?
-        let exports: JsValue  = Exports.into();
-        bind(&exports, "host_log")?;
-        bind(&exports, "host_call")?;
-
-        map.set(&JsValue::from("blockless"), &exports);
+        map.set(&JsValue::from("blockless"), &blockless_exports);
         Ok(Object::from_entries(&map.into())?)
     }
-
 }
-
-fn bind(this: &JsValue, func_name: &str) -> Result<(), JsValue> {
-    let property_key = JsValue::from(func_name);
-    let orig_func = Reflect::get(this, &property_key)?.dyn_into::<Function>()?;
-    let func = orig_func.bind(this);
-    if !Reflect::set(this, &property_key, &func)? {
-        return Err(JsValue::from("failed to set property"));
-    }
-    Ok(())
-}
-
-
-#[wasm_bindgen]
-struct Exports;
-
-// TODO: fix this (dont use unsafe global hacks)
-// static mut GUEST_INSTANCE: Option<WebAssembly::Instance> = None;
-// static mut HTTP_RESPONSE: Option<Vec<u8>> = None;
-
-// use futures::{channel::mpsc::unbounded, StreamExt};
-
-// use std::{
-//     collections::HashMap,
-//     future::Future,
-//     sync::Mutex,
-//     pin::Pin,
-// };
-// use once_cell::sync::Lazy;
-
-// static mut NEXT_ID: u64 = 0;
-// lazy_static::lazy_static! {
-//     // static ref REQUESTS: Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Response>>>> = Mutex::new(HashMap::new());
-//     static ref REQUESTS:  Mutex<HashMap<u64, Pin<Box<dyn Future<Output = Result<Vec<u8>, &'static str>>>>>> = Mutex::new(HashMap::new());
-// }
 
 use bls_common::{types::{ModuleCall, ModuleCallResponse}, http::HttpResponse};
 
-#[wasm_bindgen]
-impl Exports {
-    // pub fn set_instance(&mut self, instance: WebAssembly::Instance) {
-    //     self.instance = Some(instance);
-    // }
+pub fn host_log(instance: &WebAssembly::Instance, ptr: u32, len: u32) {
+    let data = utils::decode_data_from_memory(&instance, ptr, len);
+    let msg = std::str::from_utf8(&data).unwrap();
 
-    pub fn host_log(&self, ptr: u32, len: u32) {
-        // let instance = unsafe {
-        //     crate::GUEST_INSTANCE
-        //         .as_ref()
-        //         .expect("Guest instance should have been initialized")
-        // };
+    console_log!("host_log: {}", msg);
+}
 
-        // get instance from global context
-        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
-            .expect("Guest instance should have been set")
-            .dyn_into::<WebAssembly::Instance>()
-            .unwrap();
-    
-        let data = utils::decode_data_from_memory(&instance, ptr, len);
-        let msg = std::str::from_utf8(&data).unwrap();
-    
-        console_log!("host_log: {}", msg);
-    }
+pub fn host_call(config: Arc<RefCell<Config>>, ptr: u32, len: u32) -> u32 { // Allocate space in the guest's memory to store the return string
+    // get the instance again - using interior mutability
+    let cfg = config.borrow();
+    let instance = cfg.instance.as_ref().expect("Guest instance should have been set");
 
-    pub fn host_call(&self, ptr: u32, len: u32) -> u32 { // Allocate space in the guest's memory to store the return string
-        // let instance = unsafe {
-        //     crate::GUEST_INSTANCE
-        //         .as_ref()
-        //         .expect("Guest instance should have been initialized")
-        // };
+    let call_data = utils::decode_data_from_memory(&instance, ptr, len);
+    // console_log!("host_call: {}", std::str::from_utf8(&call_data).unwrap());
 
-        // get instance from global context
-        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
-            .expect("Guest instance should have been set")
-            .dyn_into::<WebAssembly::Instance>()
-            .unwrap();
-        
-        let call_data = utils::decode_data_from_memory(&instance, ptr, len);
-        // console_log!("host_call: {}", std::str::from_utf8(&call_data).unwrap());
+    // deserialize this to a canonical format
+    let call = serde_json::from_slice::<ModuleCall>(&call_data).unwrap();
+    call.validate_permissions(); // TODO: pass in config
+    match call {
+        ModuleCall::Http(http_req) => {
+            console_log!("host_call: http_request called: {}", http_req);
 
-        // deserialize this to a canonical format
-        let call = serde_json::from_slice::<ModuleCall>(&call_data).unwrap();
-        call.validate_permissions(); // TODO: pass in config
-        match call {
-            ModuleCall::Http(http_req) => {
-                console_log!("host_call: http_request called: {}", http_req);
+            let blockless_callback = Reflect::get(&instance.exports(), &"blockless_callback".into())
+                .expect("callback export wasn't found")
+                .dyn_into::<Function>()
+                .expect("The blockless_callback function is not present");
 
-                let blockless_callback = Reflect::get(&instance.exports(), &"blockless_callback".into())
-                    .expect("callback export wasn't found")
-                    .dyn_into::<Function>()
-                    .expect("The blockless_callback function is not present");
-
-                // async callback into guest with the result
-                wasm_bindgen_futures::spawn_local(async move {
-                    let module_call_response = match http_req.request().await {
-                        Ok(response) => {
-                            match HttpResponse::from_reqwest(response).await {
-                                Ok(res) => ModuleCallResponse::Http(Ok(res)),
-                                Err(_) => ModuleCallResponse::Http(Err("failed to parse response".into())),
-                            }
-                        },
-                        Err(err) => {
-                            console_error!("Error while running start function: {}", err);
-                            ModuleCallResponse::Http(Err(err.to_string()))
+            let cfg_ptr = config.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let module_call_response = match http_req.request().await {
+                    Ok(response) => {
+                        match HttpResponse::from_reqwest(response).await {
+                            Ok(res) => ModuleCallResponse::Http(Ok(res)),
+                            Err(_) => ModuleCallResponse::Http(Err("failed to parse response".into())),
                         }
-                    };
-                    let result_bytes = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
-                    let result_ptr = utils::encode_data_to_memory(&instance, &result_bytes);
+                    },
+                    Err(err) => {
+                        console_error!("Error while running start function: {}", err);
+                        ModuleCallResponse::Http(Err(err.to_string()))
+                    }
+                };
+                let result_bytes = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
+                
+                // get the instance again - using interior mutability
+                let cfg = cfg_ptr.borrow();
+                let instance = cfg.instance.as_ref().expect("Guest instance should have been set");
 
-                    // TODO: fix error being thrown on callback
-                    match blockless_callback.call1(&JsValue::undefined(), &JsValue::from(result_ptr)) {
-                        Ok(_) => console_log!("blockless_callback called successfully"),
-                        Err(err) => console_error!("Error while running blockless_callback {}", err.as_string().unwrap_or_default()),
-                    };
-                });
-            },
-            ModuleCall::Ipfs(ipfs_get) => {
-                console_log!("host_call: ipfs_get called: {}", ipfs_get);
-                // TODO: validate guest has exported function to callback into
-                // TODO: perform the request in spawn_local
-                // TODO: callback into guest with the result (in spawn_local)
-            },
-        };
+                let result_ptr = utils::encode_data_to_memory(instance, &result_bytes);
 
-        // TODO: serialize a canonical response format to end back to client
-        let return_str = "<hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host>";
-        let return_bytes = return_str.as_bytes();
+                // TODO: fix error being thrown on callback
+                match blockless_callback.call1(&JsValue::undefined(), &JsValue::from(result_ptr)) {
+                    Ok(_) => console_log!("blockless_callback called successfully"),
+                    Err(err) => console_error!("Error while running blockless_callback {}", err.as_string().unwrap_or_default()),
+                };
+            });
+        },
+        ModuleCall::Ipfs(ipfs_get) => {
+            console_log!("host_call: ipfs_get called: {}", ipfs_get);
+            // TODO: validate guest has exported function to callback into
+            // TODO: perform the request in spawn_local
+            // TODO: callback into guest with the result (in spawn_local)
+        },
+    };
 
-        let instance = js_sys::Reflect::get(&js_sys::global(), &"instance".into())
-            .expect("Guest instance should have been set")
-            .dyn_into::<WebAssembly::Instance>()
-            .unwrap();
+    // TODO: serialize a canonical response format to end back to client
+    let return_str = "<hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host> <hello world from host>";
+    let return_bytes = return_str.as_bytes();
 
-        let result_ptr = utils::encode_data_to_memory(&instance, return_bytes);
-        result_ptr
-    }
+    let result_ptr = utils::encode_data_to_memory(&instance, return_bytes);
+    result_ptr
 }
