@@ -14,18 +14,6 @@ extern "C" {
     pub fn host_call(ptr: u32, len: u32) -> u32;
 }
 
-// #[link(wasm_import_module = "blockless")]
-// extern "C" {
-//     #[link_name = "host_request"]
-//     pub fn host_request(ptr: u32, len: u32) -> u32;
-// }
-
-// #[link(wasm_import_module = "blockless")]
-// extern "C" {
-//     #[link_name = "host_query"]
-//     pub fn host_query(request_id: u32) -> u32;
-// }
-
 // #[link(wasm_import_module = "browser")]
 // extern "C" {
 //     #[link_name = "run_reqwest"]
@@ -48,17 +36,6 @@ extern "C" {
 //     // return the pointer so the runtime
 //     // can write data at this offset
 //     return ptr;
-// }
-
-// /// Given a pointer to the start of a byte array and
-// /// its length, return the sum of its elements.
-// #[no_mangle]
-// pub unsafe fn array_sum(ptr: *mut u8, len: usize) -> u8 {
-//     // create a Vec<u8> from the pointer to the
-//     // linear memory and the length
-//     let data = Vec::from_raw_parts(ptr, len, len);
-//     // actually compute the sum and return it
-//     data.iter().sum()
 // }
 
 #[no_mangle]
@@ -165,6 +142,7 @@ pub fn _start() {
 
         // log the result; data starts at `result_ptr + 4` because the first 4 bytes are used to store the length
         host_log(result_ptr + 4, result_len);
+        dealloc(result_ptr as *mut u8, result_len as usize);
     }
 }
 
