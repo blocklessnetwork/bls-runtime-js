@@ -93,19 +93,6 @@ pub fn blockless_callback(result_ptr: usize) -> *const u8 {
     return 0 as *const u8;
 }
 
-// #[no_mangle]
-// pub fn _start() {
-//     let url = "https://reqres.in/api/products".as_bytes();;
-//     let ptr = url.as_ptr() as u32;
-//     let len = url.len() as u32;
-//     unsafe {
-//         let result_ptr = host_call(ptr, len);
-//         // 1st byte at result_ptr is the length of the result
-//         let result_len = *(result_ptr as *const u8);
-//         host_log(result_ptr + 1, result_len as u32);
-//     }
-// }
-
 use bls_common::{
     http::{Method, HttpRequest},
     types::{ModuleCall, ModuleCallResponse},
@@ -125,12 +112,6 @@ pub fn _start() {
     let data = serde_json::to_vec(&http_call).unwrap();
     let ptr = data.as_ptr() as u32;
     let len = data.len() as u32;
-    // unsafe {
-    //     let result_ptr = host_call(ptr, len);
-    //     // 1st byte at result_ptr is the length of the result
-    //     let result_len = *(result_ptr as *const u8);
-    //     host_log(result_ptr + 1, result_len as u32);
-    // }
     unsafe {
         let result_ptr = host_call(ptr, len);
     
@@ -145,14 +126,3 @@ pub fn _start() {
         dealloc(result_ptr as *mut u8, result_len as usize);
     }
 }
-
-// // Entrypoint for the wasm module
-// #[no_mangle]
-// pub extern "C" fn _start() {
-//     pub fn main() {
-//         // println!("Hello, world!");
-//         unsafe {
-//             host_call(1);
-//         }
-//     }
-// }
