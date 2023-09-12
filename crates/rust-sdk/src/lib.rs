@@ -108,7 +108,6 @@ pub fn _start() {
     // let deserialized: ModuleCall = serde_json::from_str(&serialized).unwrap();
     // log!("{}", deserialized.to_string());
 
-    // create a `Vec<u8>` from the pointer and length
     let data = serde_json::to_vec(&http_call).unwrap();
     let ptr = data.as_ptr() as u32;
     let len = data.len() as u32;
