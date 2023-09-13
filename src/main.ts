@@ -9,33 +9,8 @@ await init();
 import { fs } from 'memfs';
 // override default `writeSync` behaviour to parse html and append to document
 (fs as any).writeSync = (fd, buffer, offset, length, position, callback) => {
-    var string = new TextDecoder().decode(buffer);
-
-    const parser = new DOMParser();
-    const htmlDoc = parser.parseFromString(string, "text/html");
-
-    // Get the <head> element from the parsed document
-    const parsedHead = htmlDoc.head;
-
-    // Get the main document's <head> element
-    const mainDocumentHead = document.head;
-
-    // Move all children from parsedHead to mainDocumentHead
-    while (parsedHead.firstChild) {
-        mainDocumentHead.appendChild(parsedHead.firstChild);
-    }
-
-    // Get the <body> element from the parsed document
-    const parsedBody = htmlDoc.body;
-
-    // Get the main document's <body> element
-    const mainDocumentBody = document.body;
-
-    // Move all children from parsedBody to mainDocumentBody
-    while (parsedBody.firstChild) {
-        mainDocumentBody.appendChild(parsedBody.firstChild);
-    }
-
+    const string = new TextDecoder().decode(buffer);
+    writeOutputToDOM(string);
     if (callback) {
         callback(null, length);
     }
@@ -134,11 +109,35 @@ const wasmInstance = bls.instantiate(wasmModule, imports);
 wasi.setMemory(wasmInstance.exports.memory as any); // set memory for wasi
 
 // wasi.start(wasmInstance);
-const exitCode = bls.start();
-console.log("Exit code: " + exitCode);
+// const exitCode = bls.start();
+// console.log("Exit code: " + exitCode);
 
 console.log("running!");
 
+
+
+
+
+
+
+
+import { init as initWasmer, WASI as WASIWasmer } from '@wasmer/wasi';
+
+await initWasmer();
+const wasiWasmer = new WASIWasmer({
+    env: {
+        BLS_REQUEST_METHOD: "GET",
+        BLS_REQUEST_PATH: "/",
+        BLS_REQUEST_QUERY: "",
+    },
+    // fs: fs as any,
+    // args: ["--my-arg"],
+});
+wasiWasmer.instantiate(wasmModule, {});
+const wasmerExitCode = wasiWasmer.start();
+const stdout = wasiWasmer.getStdoutString();
+console.log(`${stdout}(exit code: ${wasmerExitCode})`);
+// writeOutputToDOM(stdout);
 
 // // arraySum([1, 2, 3, 4, 5], instance);
 
@@ -202,3 +201,30 @@ console.log("running!");
 //     // return the pointer
 //     return ptr;
 // }
+
+function writeOutputToDOM(out: string) {
+    const parser = new DOMParser();
+    const htmlDoc = parser.parseFromString(out, "text/html");
+
+    // Get the <head> element from the parsed document
+    const parsedHead = htmlDoc.head;
+
+    // Get the main document's <head> element
+    const mainDocumentHead = document.head;
+
+    // Move all children from parsedHead to mainDocumentHead
+    while (parsedHead.firstChild) {
+        mainDocumentHead.appendChild(parsedHead.firstChild);
+    }
+
+    // Get the <body> element from the parsed document
+    const parsedBody = htmlDoc.body;
+
+    // Get the main document's <body> element
+    const mainDocumentBody = document.body;
+
+    // Move all children from parsedBody to mainDocumentBody
+    while (parsedBody.firstChild) {
+        mainDocumentBody.appendChild(parsedBody.firstChild);
+    }
+}
