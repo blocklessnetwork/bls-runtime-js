@@ -41,8 +41,10 @@ import { fs } from 'memfs';
     }
 };
 const wasi = new WASI({
-    args: [],
+    args: ["--my-arg"],
     env: {
+        FOO: "FOO",
+        BAR: "BAR",
         BLS_REQUEST_METHOD: "GET",
         BLS_REQUEST_PATH: "/",
         BLS_REQUEST_QUERY: "",
@@ -56,7 +58,7 @@ const config: BlocklessConfig = {
         BLS_REQUEST_PATH: "/",
         BLS_REQUEST_QUERY: "",
     },
-    args: [],
+    args: ["--my-arg"],
     // "fs_root_path": "/", 
     // "drivers_root_path": "/drivers", 
     // "runtime_logger": "runtime.log", 
@@ -85,32 +87,32 @@ const imports = {
     // wasi_snapshot_preview1: wasi.wasiImport,
     // wasi_snapshot_preview1: {
     //     ...wasiImports.wasi_snapshot_preview1,
-    //     environ_sizes_get(){ return 0; },
-    //     environ_get() { return 0; },
-    //     proc_exit() { return 0; },
-    //     path_open() { return 0; },
-    //     fd_close() { return 0; },
-    //     fd_prestat_dir_name() { return 0; },
-    //     fd_prestat_get() { return 0; },
-    //     fd_write(fd, iovsPtr, iovsLength, bytesWrittenPtr){
-    //         const iovs = new Uint32Array(instance.exports.memory.buffer, iovsPtr, iovsLength * 2);
-    //         if(fd === 1) { //stdout
-    //             let text = "";
-    //             let totalBytesWritten = 0;
-    //             const decoder = new TextDecoder();
-    //             for(let i =0; i < iovsLength * 2; i += 2){
-    //                 const offset = iovs[i];
-    //                 const length = iovs[i+1];
-    //                 const textChunk = decoder.decode(new Int8Array(instance.exports.memory.buffer, offset, length));
-    //                 text += textChunk;
-    //                 totalBytesWritten += length;
-    //             }
-    //             const dataView = new DataView(instance.exports.memory.buffer);
-    //             dataView.setInt32(bytesWrittenPtr, totalBytesWritten, true);
-    //             console.log(text);
-    //         }
-    //         return 0;
-    //     },
+    //     // environ_sizes_get(){ return 0; },
+    //     // environ_get() { return 0; },
+    //     // proc_exit() { return 0; },
+    //     // path_open() { return 0; },
+    //     // fd_close() { return 0; },
+    //     // fd_prestat_dir_name() { return 0; },
+    //     // fd_prestat_get() { return 0; },
+    //     // fd_write(fd, iovsPtr, iovsLength, bytesWrittenPtr){
+    //     //     const iovs = new Uint32Array(instance.exports.memory.buffer, iovsPtr, iovsLength * 2);
+    //     //     if(fd === 1) { //stdout
+    //     //         let text = "";
+    //     //         let totalBytesWritten = 0;
+    //     //         const decoder = new TextDecoder();
+    //     //         for(let i =0; i < iovsLength * 2; i += 2){
+    //     //             const offset = iovs[i];
+    //     //             const length = iovs[i+1];
+    //     //             const textChunk = decoder.decode(new Int8Array(instance.exports.memory.buffer, offset, length));
+    //     //             text += textChunk;
+    //     //             totalBytesWritten += length;
+    //     //         }
+    //     //         const dataView = new DataView(instance.exports.memory.buffer);
+    //     //         dataView.setInt32(bytesWrittenPtr, totalBytesWritten, true);
+    //     //         console.log(text);
+    //     //     }
+    //     //     return 0;
+    //     // },
     // },
     browser: {
         run_reqwest: (ptr: number, len: number) => {
@@ -131,6 +133,7 @@ const imports = {
 const wasmInstance = bls.instantiate(wasmModule, imports);
 wasi.setMemory(wasmInstance.exports.memory as any); // set memory for wasi
 
+// wasi.start(wasmInstance);
 const exitCode = bls.start();
 console.log("Exit code: " + exitCode);
 
