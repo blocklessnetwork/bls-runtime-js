@@ -3,7 +3,11 @@ import init, { Blockless, BlocklessConfig } from "../bls-runtime-wasm/pkg";
 import WASI from "wasi-js";
 import browserBindings from "wasi-js/dist/bindings/browser";
 
+await init();
+
+// setup browser based WASI
 import { fs } from 'memfs';
+// override default `writeSync` behaviour to parse html and append to document
 (fs as any).writeSync = (fd, buffer, offset, length, position, callback) => {
     var string = new TextDecoder().decode(buffer);
 
@@ -36,7 +40,6 @@ import { fs } from 'memfs';
         callback(null, length);
     }
 };
-
 const wasi = new WASI({
     args: [],
     env: {
@@ -46,8 +49,6 @@ const wasi = new WASI({
     },
     bindings: { ...browserBindings, fs },
 });
-
-await init();
 
 const config: BlocklessConfig = {
     env: {
@@ -71,12 +72,46 @@ const config: BlocklessConfig = {
 };
 const bls = new Blockless(config);
 
+// const wasmPath = "../simple.wasm";
+// const wasmPath = "../basics.wasm";
 const wasmPath = "../release.wasm";
 // const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
-// const { instance, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), {});
 const wasmModule = await WebAssembly.compileStreaming(fetch(wasmPath));
-bls.instantiate(wasmModule, {
-    wasi_snapshot_preview1: wasi.wasiImport,
+
+const wasiImports = wasi.getImports(wasmModule);
+
+const imports = {
+    ...wasiImports,
+    // wasi_snapshot_preview1: wasi.wasiImport,
+    // wasi_snapshot_preview1: {
+    //     ...wasiImports.wasi_snapshot_preview1,
+    //     environ_sizes_get(){ return 0; },
+    //     environ_get() { return 0; },
+    //     proc_exit() { return 0; },
+    //     path_open() { return 0; },
+    //     fd_close() { return 0; },
+    //     fd_prestat_dir_name() { return 0; },
+    //     fd_prestat_get() { return 0; },
+    //     fd_write(fd, iovsPtr, iovsLength, bytesWrittenPtr){
+    //         const iovs = new Uint32Array(instance.exports.memory.buffer, iovsPtr, iovsLength * 2);
+    //         if(fd === 1) { //stdout
+    //             let text = "";
+    //             let totalBytesWritten = 0;
+    //             const decoder = new TextDecoder();
+    //             for(let i =0; i < iovsLength * 2; i += 2){
+    //                 const offset = iovs[i];
+    //                 const length = iovs[i+1];
+    //                 const textChunk = decoder.decode(new Int8Array(instance.exports.memory.buffer, offset, length));
+    //                 text += textChunk;
+    //                 totalBytesWritten += length;
+    //             }
+    //             const dataView = new DataView(instance.exports.memory.buffer);
+    //             dataView.setInt32(bytesWrittenPtr, totalBytesWritten, true);
+    //             console.log(text);
+    //         }
+    //         return 0;
+    //     },
+    // },
     browser: {
         run_reqwest: (ptr: number, len: number) => {
             const instance = (globalThis as any).instance; // global variable value set by bls.instantiate
@@ -86,32 +121,21 @@ bls.instantiate(wasmModule, {
             console.info(url);
         },
     },
-});
-// const exitCode = bls.start();
-// console.log("Exit code: " + exitCode);
+};
+// const { instance: inst, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), imports);
 
-const wasmInstance = await WebAssembly.instantiate(wasmModule, { wasi_snapshot_preview1: wasi.wasiImport });
-wasi.start(wasmInstance);
+// const wasmInstance = await WebAssembly.instantiate(wasmModule, imports);
+// (wasmInstance.exports as any)._start();
+
+// const wasmInstance = await WebAssembly.instantiate(wasmModule, imports);
+const wasmInstance = bls.instantiate(wasmModule, imports);
+wasi.setMemory(wasmInstance.exports.memory as any); // set memory for wasi
+
+const exitCode = bls.start();
+console.log("Exit code: " + exitCode);
 
 console.log("running!");
 
-// // specify imports for the guest wasm module
-// const guestImports = {
-//     blockless: {
-//         host_call: (ptr: number, len: number) => {
-//             // NOTE: uses instance from below (global)
-//             const memory = new Uint8Array((instance.exports.memory as any).buffer, ptr, len);
-//             // const data = new TextDecoder().decode(memory);
-//             // console.log(data);
-//             host_call(memory);
-//         },
-//     },
-// };
-
-// // const wasmPath = "../simple.wasm";
-// const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
-// const { instance, module } = await WebAssembly.instantiateStreaming(fetch(wasmPath), guestImports);
-// (instance.exports as any).start();
 
 // // arraySum([1, 2, 3, 4, 5], instance);
 
