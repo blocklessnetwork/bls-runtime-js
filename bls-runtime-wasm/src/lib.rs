@@ -281,7 +281,7 @@ impl Blockless {
         &mut self,
         module_or_instance: JsValue,
         imports: Option<js_sys::Object>,
-    ) -> Result<(), JsValue> {
+    ) -> Result<js_sys::WebAssembly::Instance, JsValue> {
         let raw_instance = if module_or_instance.has_type::<js_sys::WebAssembly::Module>() {
             let js_module: js_sys::WebAssembly::Module = module_or_instance.unchecked_into();
             let host_exports = self.host_exports()?;
@@ -298,9 +298,10 @@ impl Blockless {
             );
         };
 
-        self.0.borrow_mut().instance = Some(raw_instance);
+        self.0.borrow_mut().instance = Some(raw_instance.clone());
 
-        Ok(())
+        // instance duplication to send back to JS
+        Ok(raw_instance)
     }
 
     /// Start the WASI Instance, it returns the status code when calling the start function
