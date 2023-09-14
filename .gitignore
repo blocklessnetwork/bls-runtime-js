@@ -4,6 +4,5 @@
 
 # BUILD DEPS & OUTPUTS
 /target
-/Cargo.lock
 node_modules/
 dist/
