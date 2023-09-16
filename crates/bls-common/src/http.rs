@@ -73,7 +73,7 @@ impl HttpRequest {
   }
     
 
-  #[cfg(feature = "use_wasm_bindgen")]
+  #[cfg(feature = "use-wasm-bindgen")]
   pub async fn request(&self) -> Result<reqwest::Response, &'static str> {
     let request: reqwest::Request = self.to_owned().try_into()?;
     let resp = reqwest::Client::new().execute(request).await.map_err(|e| {
@@ -84,7 +84,7 @@ impl HttpRequest {
   }
 }
 
-#[cfg(feature = "use_wasm_bindgen")]
+#[cfg(feature = "use-wasm-bindgen")]
 impl TryInto<reqwest::Request> for HttpRequest {
   type Error = &'static str;
 
@@ -123,7 +123,7 @@ pub struct HttpResponse {
 
 impl HttpResponse {
   // NOTE: cannot use `impl TryFrom<reqwest::Response> for HttpResponse` because reading body is async
-  #[cfg(feature = "use_wasm_bindgen")]
+  #[cfg(feature = "use-wasm-bindgen")]
   pub async fn from_reqwest(resp: reqwest::Response) -> Result<Self, String> {
     let mut headers = HashMap::new();
     for (key, value) in resp.headers().iter() {

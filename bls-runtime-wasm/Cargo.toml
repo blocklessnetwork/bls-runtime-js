@@ -2,12 +2,13 @@
 name = "bls-runtime-wasm"
 version = "0.1.0"
 authors = ["Blockless Developers"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
+bls-common = { path = "../crates/bls-common", features = ["use-wasm-bindgen"] }
 # rust-sdk = { path = "../crates/rust-sdk" }
 bls-common = { path = "../crates/bls-common", features = ["use_wasm_bindgen"] }
 wasm-bindgen = { version = "0.2.74", features = ["serde-serialize"]  }
