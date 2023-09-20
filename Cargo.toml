@@ -1,7 +1,0 @@
-[workspace]
-members = [
-  "bls-runtime-wasm",
-  "crates/bls-common",
-  "crates/rust-sdk",
-]
-default-members = ["bls-runtime-wasm"]

@@ -1,5 +1,5 @@
 // load host wasm module (isomorphic bls runtime/extensions)
-import init, { Blockless, BlocklessConfig } from "../bls-runtime-wasm/pkg";
+import init, { Blockless } from "../bls-runtime-wasm/pkg";
 import WASI from "wasi-js";
 import browserBindings from "wasi-js/dist/bindings/browser";
 
@@ -27,7 +27,7 @@ const wasi = new WASI({
     bindings: { ...browserBindings, fs },
 });
 
-const config: BlocklessConfig = {
+const bls = new Blockless({
     env: {
         BLS_REQUEST_METHOD: "GET",
         BLS_REQUEST_PATH: "/",
@@ -46,13 +46,14 @@ const config: BlocklessConfig = {
         "http://httpbin.org/anything",
         "file://a.go"
     ],
-};
-const bls = new Blockless(config);
+    fs,
+});
 
 // const wasmPath = "../simple.wasm";
 // const wasmPath = "../basics.wasm";
-const wasmPath = "../release.wasm";
+// const wasmPath = "../release.wasm";
 // const wasmPath = "../target/wasm32-unknown-unknown/release/rust_sdk.wasm";
+const wasmPath = "../crates/rust-sdk/target/wasm32-wasi/release/rust_sdk.wasm";
 const wasmModule = await WebAssembly.compileStreaming(fetch(wasmPath));
 
 const wasiImports = wasi.getImports(wasmModule);
@@ -105,74 +106,61 @@ const imports = {
 // (wasmInstance.exports as any)._start();
 
 // const wasmInstance = await WebAssembly.instantiate(wasmModule, imports);
-const wasmInstance = bls.instantiate(wasmModule, imports);
-wasi.setMemory(wasmInstance.exports.memory as any); // set memory for wasi
+const wasmInstance = bls.instantiate(wasmModule, {});
+// wasi.setMemory(wasmInstance.exports.memory as any); // set memory for wasi
 
-// wasi.start(wasmInstance);
-// const exitCode = bls.start();
-// console.log("Exit code: " + exitCode);
+// // wasi.start(wasmInstance);
+const exitCode = bls.start();
+const stdout = bls.getStdoutString();
+console.log(`${stdout}\n(exit code: ${exitCode})`);
+writeOutputToDOM(stdout);
 
-console.log("running!");
+// console.log("running!");
 
-
-
-
-
-
-
-
-import { init as initWasmer, WASI as WASIWasmer } from '@wasmer/wasi';
-
-await initWasmer();
-const wasiWasmer = new WASIWasmer({
-    env: {
-        BLS_REQUEST_METHOD: "GET",
-        BLS_REQUEST_PATH: "/",
-        BLS_REQUEST_QUERY: "",
-    },
-    // fs: fs as any,
-    // args: ["--my-arg"],
-});
-wasiWasmer.instantiate(wasmModule, {});
-const wasmerExitCode = wasiWasmer.start();
-const stdout = wasiWasmer.getStdoutString();
-console.log(`${stdout}(exit code: ${wasmerExitCode})`);
+// const wasmInstance = bls.instantiate(wasmModule, {});
+// const wasmerExitCode = bls.start();
+// const stdout = bls.getStdoutString();
+// console.log(`${stdout}\n(exit code: ${wasmerExitCode})`);
 // writeOutputToDOM(stdout);
 
-// // arraySum([1, 2, 3, 4, 5], instance);
+// import { init as initWasmer, WASI as WASIWasmer } from '@wasmer/wasi';
+// import initWasmer, { WASI as WASIWasmer } from '../../../wasmer-js/pkg';
 
-// Invoke the `array_sum` exported method and
-// log the result to the console
-// function arraySum(array: Uint8Array, instance: WebAssembly.Instance) {
-//     // copy the contents of `array` into the
-//     // module's memory and get the offset
-//     const ptr = copyMemory(instance, array);
-//     // invoke the module's `array_sum` exported function
-//     // and log the result
-//     const res = (instance.exports as any).array_sum(ptr, array.length);
-//     console.log("Result: " + res);
-// }
+// await initWasmer();
+// const wasiWasmer = new WASIWasmer({
+//     env: {
+//         BLS_REQUEST_METHOD: "GET",
+//         BLS_REQUEST_PATH: "/",
+//         BLS_REQUEST_QUERY: "",
+//     },
+//     // fs: fs as any,
+//     // args: ["--my-arg"],
+// });
+// wasiWasmer.instantiate(wasmModule, {});
+// const wasmerExitCode = wasiWasmer.start();
+// const stdout = wasiWasmer.getStdoutString();
+// console.log(`${stdout}(exit code: ${wasmerExitCode})`);
+// writeOutputToDOM(stdout);
 
-// function upper(input: string, instance: WebAssembly.Instance) {
-//     // transform the input string into its UTF-8
-//     // representation
-//     const bytes = new TextEncoder().encode(input);
-//     // copy the contents of the string into
-//     // the module's memory
-//     const ptr = copyMemory(instance, bytes);
-//     // call the module's `upper` function and
-//     // get the offset into the memory where the
-//     // module wrote the result string
-//     const res_ptr = (instance.exports as any).upper(ptr, bytes.length);
-//     // read the string from the module's memory,
-//     // store it, and log it to the console
-//     const result = readString(res_ptr, bytes.length, instance);
-//     console.log(result);
-//     // the JavaScript runtime took ownership of the
-//     // data returned by the module, which did not
-//     // deallocate it - so we need to clean it up
-//     deallocGuestMemory(res_ptr, bytes.length, instance);
-// }
+
+
+
+
+// import initWasmer, { initSync, run, Runtime } from '../../../wasmer-js/pkg';
+
+// await initWasmer();
+// const runtime = new Runtime(1);
+// const instance = run(wasmModule, runtime, {
+//     env: {
+//         BLS_REQUEST_METHOD: "GET",
+//         BLS_REQUEST_PATH: "/",
+//         BLS_REQUEST_QUERY: "",
+//     },
+//     // fs: fs as any,
+//     // args: ["--my-arg"],
+// });
+// const output = await instance.wait();
+
 
 // Read a string from the instance's memory.
 // function readString(ptr: number, len: number, instance: WebAssembly.Instance) {

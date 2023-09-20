@@ -3,6 +3,6 @@
 .vscode/
 
 # BUILD DEPS & OUTPUTS
-/target
+target/
 node_modules/
 dist/

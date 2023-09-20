@@ -30,10 +30,11 @@ impl AsRef<[u8]> for Method {
   }
 }
 
-impl TryFrom<&str> for Method {
-  type Error = &'static str;
-  fn try_from(value: &str) -> Result<Self, Self::Error> {
-    match value.to_lowercase().as_str() {
+// allow to parse from string
+impl std::str::FromStr for Method {
+  type Err = &'static str;
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    match s.to_lowercase().as_str() {
       "get" => Ok(Method::Get),
       "post" => Ok(Method::Post),
       "put" => Ok(Method::Put),
@@ -44,7 +45,6 @@ impl TryFrom<&str> for Method {
     }
   }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct HttpRequest {
@@ -71,13 +71,12 @@ impl HttpRequest {
       .iter()
       .any(|p| url.starts_with(&p.to_lowercase()))
   }
-    
 
   #[cfg(feature = "use-wasm-bindgen")]
   pub async fn request(&self) -> Result<reqwest::Response, &'static str> {
     let request: reqwest::Request = self.to_owned().try_into()?;
-    let resp = reqwest::Client::new().execute(request).await.map_err(|e| {
-      // error!("request send error, {}", e);
+    let resp = reqwest::Client::new().execute(request).await.map_err(|_e| {
+      // error!("request send error, {}", _e);
       "request send error"
     })?;
     Ok(resp)
