@@ -144,6 +144,9 @@ extern "C" {
 //     virtual_fs::{Pipe, PipeTx, PipeRx, DuplexPipe},
 //     WasiError, WasiFunctionEnv, WasiEnvBuilder, runtime::{task_manager::WebThreadPool, web::WebRuntime}
 // };
+pub mod fs;
+use crate::fs::MemFS;
+
 use wasmer::{imports, Imports, Exports, ExternType, TypedFunction, Instance, Module, Store, Function, FunctionEnv, FunctionEnvMut, Memory, AsStoreRef, AsStoreMut, Value, MemoryView};
 use wasmer_wasi::Pipe;
 use wasmer::NativeWasmTypeInto;
@@ -170,6 +173,7 @@ impl Blockless {
     #[wasm_bindgen(constructor)]
     pub fn new(config: BlocklessConfig) -> Result<Blockless, JsValue> {
         init_panic_hook();
+
         let args: Vec<String> = {
             let args = js_sys::Reflect::get(&config, &"args".into())?;
             if args.is_undefined() {
@@ -244,14 +248,14 @@ impl Blockless {
             }
         };
 
-        // let fs = {
-        //     let fs = js_sys::Reflect::get(&config, &"fs".into())?;
-        //     if fs.is_undefined() {
-        //         // MemFS::new()? // TODO: use this
-        //     } else {
-        //         // MemFS::from_js(fs)? // TODO: use this
-        //     }
-        // };
+        let fs = {
+            let fs = js_sys::Reflect::get(&config, &"fs".into())?;
+            if fs.is_undefined() {
+                MemFS::new()?
+            } else {
+                MemFS::from_js(fs)?
+            }
+        };
 
         let mut store = Store::default();
         let stdout = Pipe::default();
@@ -260,7 +264,7 @@ impl Blockless {
         let wasi_env = WasiState::new(args.get(0).unwrap_or(&"".to_string()))
             .args(if !args.is_empty() { &args[1..] } else { &[] })
             .envs(env)
-            // .fs(Box::new(fs))
+            .set_fs(Box::new(fs))
             .stdout(Box::new(stdout.clone()))
             .stdin(Box::new(stdin.clone()))
             .stderr(Box::new(stderr.clone()))
@@ -284,16 +288,16 @@ impl Blockless {
         })
     }
 
-    // #[wasm_bindgen(getter)]
-    // pub fn fs(&mut self) -> Result<MemFS, JsValue> {
-    //     let state = self.wasi_env.data_mut(&mut self.store).state();
-    //     let mem_fs = state
-    //         .fs
-    //         .fs_backing
-    //         .downcast_ref::<MemFS>()
-    //         .ok_or_else(|| js_sys::Error::new("Failed to downcast to MemFS"))?;
-    //     Ok(mem_fs.clone())
-    // }
+    #[wasm_bindgen(getter)]
+    pub fn fs(&mut self) -> Result<MemFS, JsValue> {
+        let state = self.wasi_env.data_mut(&mut self.store).state();
+        let mem_fs = state
+            .fs
+            .fs_backing
+            .downcast_ref::<MemFS>()
+            .ok_or_else(|| js_sys::Error::new("Failed to downcast to MemFS"))?;
+        Ok(mem_fs.clone())
+    }
 
     #[wasm_bindgen(js_name = getImports)]
     pub fn get_imports(
@@ -308,6 +312,7 @@ impl Blockless {
         let module: Module = module.into();
         let mut import_object = self.get_wasi_imports(&module)?;
         import_object.extend(&self.get_host_imports()?);
+        // let mut import_object = &self.get_host_imports()?;
 
         self.module = Some(module);
 
@@ -375,7 +380,6 @@ impl Blockless {
         
         #[derive(Clone)]
         struct Env {
-            // counter: Arc<Mutex<RefCell<u32>>>,
             exports: Arc<Mutex<RefCell<Option<Exports>>>>,
             permissions: Vec<String>,
         }
@@ -383,42 +387,19 @@ impl Blockless {
             exports: self.exports.clone(),
             permissions: self.permissions.clone(),
         });
+
         fn host_log(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) {
             let exports = {
                 let binding = ctx.data().exports.lock().unwrap();
                 let exports = binding.borrow().to_owned().expect("exports should have been set");
                 exports
             };
-
-            let boxed_ctx_ref: Box<FunctionEnvMut<Env>> = Box::new(ctx);
-            let static_ctx_ref: &'static mut FunctionEnvMut<Env> = unsafe { std::mem::transmute(Box::leak(boxed_ctx_ref)) };
-
-            wasm_bindgen_futures::spawn_local(async move {
-                let memory = exports.get_memory("memory").expect("memory export wasn't found");
-                let mut buf = vec![0u8; len as usize];
-                memory.view(&static_ctx_ref.as_store_ref()).read(ptr.into(), &mut buf).expect("failed to read memory");
-                let buf_str = std::str::from_utf8(&buf).unwrap();
-                console_log!("[log-x]: {}", buf_str);
-
-                // manually deallocate memory
-                unsafe {
-                    let _reclaimed = Box::from_raw(static_ctx_ref);
-                }
-            });
+            let memory = exports.get_memory("memory").expect("memory export wasn't found");
+            let mut buf = vec![0u8; len as usize];
+            memory.view(&ctx.as_store_ref()).read(ptr.into(), &mut buf).expect("failed to read memory");
+            let buf_str = std::str::from_utf8(&buf).unwrap();
+            console_log!("[log]: {}", buf_str);
         }
-
-        // fn host_log(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) {
-        //     let exports = {
-        //         let binding = ctx.data().exports.lock().unwrap();
-        //         let exports = binding.borrow().to_owned().expect("exports should have been set");
-        //         exports
-        //     };
-        //     let memory = exports.get_memory("memory").expect("memory export wasn't found");
-        //     let mut buf = vec![0u8; len as usize];
-        //     memory.view(&ctx.as_store_ref()).read(ptr.into(), &mut buf).expect("failed to read memory");
-        //     let buf_str = std::str::from_utf8(&buf).unwrap();
-        //     console_log!("[log]: {}", buf_str);
-        // }
 
         fn host_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) -> u32 {
             let exports = {
@@ -607,6 +588,7 @@ impl Blockless {
 
         self.instance = Some(instance);
 
+        // TODO: is there a better approach?
         self.exports.lock().unwrap().borrow_mut().replace(self.instance.as_ref().unwrap().exports.clone());
 
         Ok(raw_instance)
