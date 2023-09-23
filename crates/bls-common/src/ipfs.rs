@@ -1,5 +1,5 @@
 
-use crate::impl_display_via_json;
+use crate::impl_display;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -7,7 +7,7 @@ pub struct IpfsGetParams {
   pub cid: u64,
 }
 
-impl_display_via_json!(IpfsGetParams);
+impl_display!(IpfsGetParams);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IpfsResponse {
@@ -15,4 +15,4 @@ pub struct IpfsResponse {
   pub data: String,
 }
 
-impl_display_via_json!(IpfsResponse);
+impl_display!(IpfsResponse);

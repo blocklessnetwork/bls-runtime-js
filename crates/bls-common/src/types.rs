@@ -1,6 +1,6 @@
 use crate::http::{HttpRequest, HttpResponse};
 use crate::ipfs::{IpfsGetParams, IpfsResponse};
-use crate::impl_display_via_json;
+use crate::impl_display;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +28,7 @@ impl ModuleCall {
   }
 }
 
-impl_display_via_json!(ModuleCall);
+impl_display!(ModuleCall);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "module", content = "response")]
@@ -37,4 +37,4 @@ pub enum ModuleCallResponse {
   Ipfs(Result<IpfsResponse, String>),
 }
 
-impl_display_via_json!(ModuleCallResponse);
+impl_display!(ModuleCallResponse);

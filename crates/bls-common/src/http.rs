@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use crate::impl_display_via_json;
+use crate::impl_display;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Method {
@@ -111,7 +111,7 @@ impl TryInto<reqwest::Request> for HttpRequest {
   }
 }
 
-impl_display_via_json!(HttpRequest);
+impl_display!(HttpRequest);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpResponse {
@@ -138,4 +138,4 @@ impl HttpResponse {
   }
 }
 
-impl_display_via_json!(HttpResponse);
+impl_display!(HttpResponse);
