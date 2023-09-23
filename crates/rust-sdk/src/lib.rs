@@ -1,5 +1,3 @@
-/// SOURCE: https://radu-matei.com/blog/practical-guide-to-wasm-memory/
-
 mod utils;
 
 #[link(wasm_import_module = "blockless")]
@@ -13,12 +11,6 @@ extern "C" {
     #[link_name = "host_call"]
     pub fn host_call(ptr: u32, len: u32) -> u32;
 }
-
-// #[link(wasm_import_module = "browser")]
-// extern "C" {
-//     #[link_name = "run_reqwest"]
-//     pub fn run_reqwest(ptr: u32, len: u32) -> u32;
-// }
 
 // /// Allocate memory into the module's linear memory
 // /// and return the offset to the start of the block.
@@ -55,8 +47,15 @@ pub unsafe fn dealloc(ptr: *mut u8, size: usize) {
 #[no_mangle]
 pub fn blockless_callback(result_ptr: usize) -> *const u8 {
     let serialized = read_data_from_ptr(result_ptr);
-    let deserialized: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap();
-    log!("{}", deserialized.to_string());
+    let module_call_response: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
+
+    // call the callback function
+    GLOBAL_CALLBACK.with(|callback| {
+        if let Some(func) = *callback.borrow() {
+            func(module_call_response);
+        }
+    });
+
     return 0 as *const u8;
 }
 
@@ -80,29 +79,42 @@ use bls_common::{
     types::{ModuleCall, ModuleCallResponse},
 };
 
+use std::cell::RefCell;
+
+// global mutable variables (since this is a single-threaded runtime)
+thread_local! {
+    static GLOBAL_CALLBACK: RefCell<Option<fn(ModuleCallResponse)>> = RefCell::new(None);
+}
+
+pub fn dispatch_host_call(module_call: ModuleCall, callback_fn: fn(ModuleCallResponse)) {
+    let data = serde_json::to_vec(&module_call).unwrap();
+    let ptr = data.as_ptr() as u32;
+    let len = data.len() as u32;
+
+    let result_ptr = unsafe { host_call(ptr, len) };
+    if result_ptr == 0 {
+        // only register callback if the host call was successful (early return)
+        GLOBAL_CALLBACK.with(|callback| {
+            *callback.borrow_mut() = Some(callback_fn);
+        });
+        return;
+    }
+    let error_response = read_data_from_ptr(result_ptr as usize);
+
+    // let input_str = String::from_utf8(error_response).unwrap();
+    // println!("input_str: {}", input_str);
+
+    let deserialized: ModuleCallResponse = serde_json::from_slice(&error_response[..]).unwrap();
+    callback_fn(deserialized);
+}
+
 #[no_mangle]
 pub fn _start() {
     let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
     let http_call = ModuleCall::Http(req);
-    // let serialized = serde_json::to_string(&http_req).unwrap();
-    // log!("{}", serialized);
 
-    // let deserialized: ModuleCall = serde_json::from_str(&serialized).unwrap();
-    // log!("{}", deserialized.to_string());
-
-    let data = serde_json::to_vec(&http_call).unwrap();
-    let ptr = data.as_ptr() as u32;
-    let len = data.len() as u32;
-    let serialized_result = unsafe {
-        let result_ptr = host_call(ptr, len);
-        if result_ptr == 0 {
-            return;
-        }
-        read_data_from_ptr(result_ptr as usize)
-    };
-    // let input_str = String::from_utf8(data).unwrap();
-    // println!("input_str: {}", input_str);
-
-    let deserialized: ModuleCallResponse = serde_json::from_slice(&serialized_result[..]).unwrap();
-    log!("{}", deserialized.to_string());
+    dispatch_host_call(http_call, |response| {
+        log!("callback hit!");
+        log!("{}", response);
+    });
 }

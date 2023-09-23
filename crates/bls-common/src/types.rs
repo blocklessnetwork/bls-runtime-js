@@ -1,7 +1,6 @@
 use crate::http::{HttpRequest, HttpResponse};
 use crate::ipfs::{IpfsGetParams, IpfsResponse};
 use crate::impl_display;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

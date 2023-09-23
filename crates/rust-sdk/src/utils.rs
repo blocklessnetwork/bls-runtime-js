@@ -1,4 +1,5 @@
 
+#![allow(dead_code)]
 fn log(msg: &str) {
   let msg_bytes = msg.as_bytes();
   let ptr = msg_bytes.as_ptr() as u32;
