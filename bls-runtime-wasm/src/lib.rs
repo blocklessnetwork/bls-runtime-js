@@ -395,7 +395,7 @@ impl Blockless {
             0
         }
 
-        fn http_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) -> u32 {
+        fn http_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32, callback_id: u64) -> u32 {
             let exports = {
                 let binding = ctx.data().exports.lock().unwrap();
                 let exports = binding.borrow().to_owned().expect("exports should have been set");
@@ -468,7 +468,7 @@ impl Blockless {
                 let data = serde_json::to_vec(&http_call_response).expect("failed to serialize module call response");
                 let result_ptr = utils::encode_data_to_memory_given_primitives(&memory_obj, &alloc_func, &data);
 
-                match http_callback.call1(&JsValue::undefined(), &JsValue::from(result_ptr)) {
+                match http_callback.call2(&JsValue::undefined(), &JsValue::from(result_ptr), &JsValue::from(callback_id)) {
                     Ok(_val) => console_log!("http_callback called successfully"),
                     Err(err) => console_error!("Error while running http_callback {}", err.as_string().unwrap_or_default()),
                 };
