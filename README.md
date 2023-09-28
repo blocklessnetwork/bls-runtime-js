@@ -1,6 +1,10 @@
 # Blockless Isomorphic Runtime
 
-A wasi-compatible isomorphic runtime for blockless.
+A wasi-compatible isomorphic runtime.
+
+![Blockless Runtime Logo](https://github.com/blocklessnetwork/bls-runtime/blob/main/blockless.png?raw=true)
+
+## Features
 
 The runtime itself a wasm module (host) that is loaded in an environment.
 The runtime loads a guest wasm module and executes it.
