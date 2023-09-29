@@ -14,7 +14,7 @@ pub fn decode_data_from_memory(memory: &WebAssembly::Memory, ptr: u32, len: u32)
 /// The first 4 bytes (u32) at the returned pointer is the length of the data (max length of u32).
 /// The rest of the bytes are the data itself.
 /// NOTE: the caller is responsible for deallocating the memory.
-pub fn encode_data_to_memory_given_primitives(memory: &WebAssembly::Memory, alloc_func: &Function, data: &[u8]) -> u32 {
+pub fn encode_data_to_memory(memory: &WebAssembly::Memory, alloc_func: &Function, data: &[u8]) -> u32 {
     // NOTE: first 4 bytes represent the length of the result
     let result_ptr = alloc_func
         .call1(&JsValue::undefined(), &JsValue::from((data.len() as u32) + 4))

@@ -59,7 +59,7 @@ pub unsafe fn dealloc(ptr: *mut u8, size: usize) {
 
 #[no_mangle]
 pub fn blockless_callback(result_ptr: usize) -> *const u8 {
-    let serialized = read_data_from_ptr(result_ptr);
+    let serialized = decode_from_ptr(result_ptr);
     let module_call_response: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
 
     // call the callback function
@@ -74,7 +74,7 @@ pub fn blockless_callback(result_ptr: usize) -> *const u8 {
 
 #[no_mangle]
 pub fn http_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
-    let serialized = read_data_from_ptr(result_ptr);
+    let serialized = decode_from_ptr(result_ptr);
     let http_call_response: Result<HttpResponse, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
 
     HTTP_CALLBACKS.with(|callbacks| {
@@ -86,7 +86,7 @@ pub fn http_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
     0 as *const u8
 }
 
-fn read_data_from_ptr(result_ptr: usize) -> Vec<u8> {
+fn decode_from_ptr(result_ptr: usize) -> Vec<u8> {
     let serialized = unsafe {
          // first 4 bytes at result_ptr represent the length of the result (as u32)
         let result_len = *(result_ptr as *const u32); // directly dereference to u32
@@ -123,7 +123,7 @@ pub fn dispatch_host_call(module_call: ModuleCall, callback_fn: fn(ModuleCallRes
         });
         return;
     }
-    let error_response = read_data_from_ptr(result_ptr as usize);
+    let error_response = decode_from_ptr(result_ptr as usize);
 
     // let input_str = String::from_utf8(error_response).unwrap();
     // println!("input_str: {}", input_str);
@@ -151,7 +151,7 @@ pub fn dispatch_http_call(module_call: HttpRequest, callback_fn: fn(Result<HttpR
         return Ok(());
     }
 
-    let error_response = read_data_from_ptr(result_ptr as usize);
+    let error_response = decode_from_ptr(result_ptr as usize);
     let str_error_response = String::from_utf8(error_response).map_err(|_| "Failed to convert error response to string")?;
 
     callback_fn(Err(str_error_response));

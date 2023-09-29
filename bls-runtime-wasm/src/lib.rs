@@ -367,7 +367,7 @@ impl Blockless {
                             }
                         };
                         let data = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
-                        let result_ptr = utils::encode_data_to_memory_given_primitives(&memory_obj, &alloc_func, &data);
+                        let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
 
                         // memory.view(&static_ctx_ref.as_store_ref()).write(ptr as u64, &(data.len() as u32).to_le_bytes()).expect("failed to write data length to memory");
                         // memory.view(&static_ctx_ref.as_store_ref()).write((ptr + 4) as u64, &data).expect("failed to write data to memory");
@@ -466,7 +466,7 @@ impl Blockless {
                 };
                 console_log!("host_call: http_call_response: {:?}", http_call_response);
                 let data = serde_json::to_vec(&http_call_response).expect("failed to serialize module call response");
-                let result_ptr = utils::encode_data_to_memory_given_primitives(&memory_obj, &alloc_func, &data);
+                let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
 
                 match http_callback.call2(&JsValue::undefined(), &JsValue::from(result_ptr), &JsValue::from(callback_id)) {
                     Ok(_val) => console_log!("http_callback called successfully"),
