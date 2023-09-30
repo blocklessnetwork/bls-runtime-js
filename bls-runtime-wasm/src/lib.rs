@@ -506,7 +506,7 @@ impl Blockless {
             let module: Module = js_module.into();
 
             // inject wasi + host + guest imports
-            let mut runtime_imports = self.get_wasi_imports(&module)?;
+            let mut runtime_imports = self.get_wasi_imports(&module).unwrap_or_default();
             runtime_imports.extend(&self.get_host_imports()?);
             if let Some(base_imports) = imports {
                 let imports = Imports::new_from_js_object(&mut self.store, &module, base_imports).map_err(
