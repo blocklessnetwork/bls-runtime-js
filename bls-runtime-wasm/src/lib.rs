@@ -93,6 +93,8 @@ pub struct Blockless {
     permissions: Vec<String>,
     module: Option<Module>,
     instance: Option<Instance>,
+    // host exports may call into guest guest imports - which may not be set.
+    // hence we utilize mutex with interior mutability to set the exports.
     exports: Arc<Mutex<RefCell<Option<Exports>>>>,
 }
 
@@ -607,6 +609,12 @@ impl Blockless {
                 }
             }
         }
+    }
+
+    #[wasm_bindgen(js_name = getInstance)]
+    pub fn instance(&self) -> Result<js_sys::WebAssembly::Instance, JsValue> {
+        let instance = self.instance.as_ref().ok_or(js_sys::Error::new("Instance not set"))?;
+        Ok(instance.raw(&self.store).clone())
     }
 
     // Stdio methods below
