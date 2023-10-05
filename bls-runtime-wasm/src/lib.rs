@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 pub mod fs;
 pub mod utils;
 
-use bls_common::{types::{ModuleCall, ModuleCallResponse}, http::{HttpResponse, HttpRequest}};
+use bls_common::{http::{HttpResponse, HttpRequest}};
 
 use serde::{Deserialize, Serialize};
 use js_sys::{Map, Object, Reflect, WebAssembly};
@@ -284,119 +284,7 @@ impl Blockless {
             let buf_str = std::str::from_utf8(&buf).unwrap();
             console_log!("[log]: {}", buf_str);
         }
-
-        fn host_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) -> u32 {
-            let exports = {
-                let binding = ctx.data().exports.lock().unwrap();
-                let exports = binding.borrow().to_owned().expect("exports should have been set");
-                exports
-            };
-            let memory = exports.get_memory("memory").expect("memory export wasn't found");
-
-            let mut buf = vec![0u8; len as usize];
-            memory.view(&ctx.as_store_ref()).read(ptr as u64, &mut buf).expect("failed to read memory");
-
-            // required to write data back to guest
-            // TODO: find another way to do this without manually allocating memory?
-            let alloc_func = exports.get_function("alloc").expect("alloc function not found");
-
-            // let buf_str = std::str::from_utf8(&buf).unwrap();
-            // console_log!("host_call successfully read data: {:?}", buf_str);
-
-            let call = serde_json::from_slice::<ModuleCall>(&buf).unwrap();
-            call.validate_permissions(); // TODO: pass in config?
-            match call {
-                ModuleCall::Http(http_req) => {
-                    console_log!("host_call: http_request called: {}", http_req); // TODO trace
-                    let blockless_callback = exports.get_function("blockless_callback").expect("blockless_callback function not found");
-
-                    if !http_req.valid_permissions(&ctx.data().permissions) {
-                        console_error!("invalid permissions");
-                        let data = serde_json::to_vec(&ModuleCallResponse::Http(Err("invalid permissions".into())))
-                            .expect("failed to serialize module call response");
-                        // allocate memory for size of result and return back pointer to the allocated memory
-                        // first 4 bytes are the length of the result
-                        memory.view(&ctx.as_store_ref()).write(ptr as u64, &(data.len() as u32).to_le_bytes()).expect("failed to write data length to memory");
-                        // next bytes are the actual result
-                        memory.view(&ctx.as_store_ref()).write((ptr + 4) as u64, &data).expect("failed to write data to memory");
-                        return ptr as u32;
-                    }
-
-                    let boxed_ctx_ref: Box<FunctionEnvMut<Env>> = Box::new(ctx);
-                    let static_ctx_ref: &'static mut FunctionEnvMut<Env> = unsafe { std::mem::transmute(Box::leak(boxed_ctx_ref)) };
-
-                    wasm_bindgen_futures::spawn_local(async move {
-                        let memory = exports.get_memory("memory").expect("memory export wasn't found");
-
-                        // NOTE: convert callbacks to wasm_bindgen types - since return values do not seem to work!
-                        let memory_obj: WebAssembly::Memory = exports.
-                            get_extern("memory")
-                            .expect("memory export wasn't found")
-                            .to_vm_extern()
-                            .as_jsvalue(&static_ctx_ref.as_store_ref())
-                            .clone()
-                            .into();
-                        let blockless_callback: js_sys::Function = exports
-                            .get_function("blockless_callback")
-                            .expect("blockless_callback function not found")
-                            .to_vm_extern()
-                            .as_jsvalue(&static_ctx_ref.as_store_ref())
-                            .clone()
-                            .into();
-                        let alloc_func: js_sys::Function = exports
-                            .get_function("alloc")
-                            .expect("alloc function not found")
-                            .to_vm_extern()
-                            .as_jsvalue(&static_ctx_ref.as_store_ref())
-                            .clone()
-                            .into();
-
-                        // NOTE: convert callbacks to wasm_bindgen types - since return values do not seem to work!
-                        // let memory = exports.get_memory("memory").expect("memory export wasn't found");
-                        // let blockless_callback = exports.get_function("blockless_callback").expect("blockless_callback function not found");
-                        // let blockless_callback_typed: TypedFunction<i32, i32> = blockless_callback.typed(&static_ctx_ref.as_store_ref()).expect("failed to get typed blockless_callback");
-
-                        let module_call_response = match http_req.request().await {
-                            Ok(response) => {
-                                match HttpResponse::from_reqwest(response).await {
-                                    Ok(res) => ModuleCallResponse::Http(Ok(res)),
-                                    Err(_) => ModuleCallResponse::Http(Err("failed to parse response".into())),
-                                }
-                            },
-                            Err(err) => {
-                                console_error!("Error while running start function: {}", err);
-                                ModuleCallResponse::Http(Err(err.to_string()))
-                            }
-                        };
-                        let data = serde_json::to_vec(&module_call_response).expect("failed to serialize module call response");
-                        let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
-
-                        // memory.view(&static_ctx_ref.as_store_ref()).write(ptr as u64, &(data.len() as u32).to_le_bytes()).expect("failed to write data length to memory");
-                        // memory.view(&static_ctx_ref.as_store_ref()).write((ptr + 4) as u64, &data).expect("failed to write data to memory");
-
-                        // match blockless_callback.call(&mut static_ctx_ref, &[Value::I32(ptr as i32)]) {
-                        // match blockless_callback_typed.call(&mut static_ctx_ref, ptr as i32) {
-                        match blockless_callback.call1(&JsValue::undefined(), &JsValue::from(result_ptr)) {
-                            Ok(_val) => console_log!("blockless_callback called successfully"),
-                            Err(err) => console_error!("Error while running blockless_callback {}", err.as_string().unwrap_or_default()),
-                        };
-
-                        // manually deallocate memory
-                        unsafe {
-                            let _reclaimed = Box::from_raw(static_ctx_ref);
-                        }
-                    });
-                },
-                ModuleCall::Ipfs(ipfs_get) => {
-                    console_log!("host_call: ipfs_get called: {}", ipfs_get);
-                    // TODO: validate guest has exported function to callback into
-                    // TODO: perform the request in spawn_local
-                    // TODO: callback into guest with the result (in spawn_local)
-                },
-            };
-            0
-        }
-
+        
         fn http_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32, callback_id: u64) -> u32 {
             let exports = {
                 let binding = ctx.data().exports.lock().unwrap();
@@ -486,7 +374,6 @@ impl Blockless {
         let imports = imports! {
             "blockless" => {
                 "host_log" => Function::new_typed_with_env(&mut self.store, &env, host_log),
-                "host_call" => Function::new_typed_with_env(&mut self.store, &env, host_call),
                 "http_call" => Function::new_typed_with_env(&mut self.store, &env, http_call),
             },
         };

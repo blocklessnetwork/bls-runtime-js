@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::cell::{Cell, RefCell};
 use bls_common::{
     http::{Method, HttpRequest, HttpResponse},
-    types::{ModuleCall, ModuleCallResponse},
 };
 
 mod utils;
@@ -58,21 +57,6 @@ pub unsafe fn dealloc(ptr: *mut u8, size: usize) {
 }
 
 #[no_mangle]
-pub fn blockless_callback(result_ptr: usize) -> *const u8 {
-    let serialized = decode_from_ptr(result_ptr);
-    let module_call_response: ModuleCallResponse = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
-
-    // call the callback function
-    MODULE_CALLBACK.with(|callback| {
-        if let Some(func) = *callback.borrow() {
-            func(module_call_response);
-        }
-    });
-
-    return 0 as *const u8;
-}
-
-#[no_mangle]
 pub fn http_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
     let serialized = decode_from_ptr(result_ptr);
     let http_call_response: Result<HttpResponse, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
@@ -106,30 +90,7 @@ fn decode_from_ptr(result_ptr: usize) -> Vec<u8> {
 // global mutable variables (since this is a single-threaded runtime)
 thread_local! {
     static NEXT_CALLBACK_ID: Cell<u64> = Cell::new(0);
-    static MODULE_CALLBACK: RefCell<Option<fn(ModuleCallResponse)>> = RefCell::new(None);
     static HTTP_CALLBACKS: RefCell<HashMap<u64, fn(Result<HttpResponse, String>)>> = RefCell::new(HashMap::new());
-}
-
-pub fn dispatch_host_call(module_call: ModuleCall, callback_fn: fn(ModuleCallResponse)) {
-    let data = serde_json::to_vec(&module_call).unwrap();
-    let ptr = data.as_ptr() as u32;
-    let len = data.len() as u32;
-
-    let result_ptr = unsafe { host_call(ptr, len) };
-    if result_ptr == 0 {
-        // only register callback if the host call was successful (early return)
-        MODULE_CALLBACK.with(|callback| {
-            *callback.borrow_mut() = Some(callback_fn);
-        });
-        return;
-    }
-    let error_response = decode_from_ptr(result_ptr as usize);
-
-    // let input_str = String::from_utf8(error_response).unwrap();
-    // println!("input_str: {}", input_str);
-
-    let deserialized: ModuleCallResponse = serde_json::from_slice(&error_response[..]).unwrap();
-    callback_fn(deserialized);
 }
 
 pub fn dispatch_http_call(module_call: HttpRequest, callback_fn: fn(Result<HttpResponse, String>)) -> Result<(), &'static str> {
