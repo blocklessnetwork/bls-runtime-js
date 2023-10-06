@@ -1,7 +1,5 @@
 /// Declare common structs, serialization, deserialization and functions here;
 /// the `bls-runtime-wasm` and `rust-sdk` will use this crate
-
-pub mod types;
 pub mod http;
 pub mod ipfs;
 
