@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize};
 /// declare IPFS client behind feature flag - since reqwest is not supported in wasm32-unknown-unknown targets
 #[cfg(feature = "use-wasm-bindgen")]
 pub mod client {
-  use super::*;
-
+  #[derive(Debug, Clone)]
   pub struct IPFSClient {
     client: reqwest::Client,
     url: reqwest::Url,
@@ -74,7 +73,8 @@ pub mod client {
   }
 }
 
-pub enum IPFSCommands {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum IPFSCommand {
   FilesChCid(FilesChCidOpts),
   FilesCp(FilesCpOpts),
   FilesLs(FilesLsOpts),
@@ -88,22 +88,24 @@ pub enum IPFSCommands {
 }
 
 #[cfg(feature = "use-wasm-bindgen")]
-impl IPFSCommands {
+impl IPFSCommand {
   pub async fn exec(&self, client: &crate::ipfs::client::IPFSClient) -> Result<Vec<u8>, String> {
     match self {
-      IPFSCommands::FilesChCid(opts) => client.post(opts).await,
-      IPFSCommands::FilesCp(opts) => client.post(opts).await,
-      IPFSCommands::FilesLs(opts) => client.post(opts).await,
-      IPFSCommands::FilesMkdir(opts) => client.post(opts).await,
-      IPFSCommands::FilesMv(opts) => client.post(opts).await,
-      IPFSCommands::FilesRead(opts) => client.post(opts).await,
-      IPFSCommands::FilesRm(opts) => client.post(opts).await,
-      IPFSCommands::FilesStat(opts) => client.post(opts).await,
-      IPFSCommands::FilesWrite(opts) => client.post_form(opts, "file", opts.file_data.clone()).await,
-      IPFSCommands::Version(opts) => client.post(opts).await,
+      IPFSCommand::FilesChCid(opts) => client.post(opts).await,
+      IPFSCommand::FilesCp(opts) => client.post(opts).await,
+      IPFSCommand::FilesLs(opts) => client.post(opts).await,
+      IPFSCommand::FilesMkdir(opts) => client.post(opts).await,
+      IPFSCommand::FilesMv(opts) => client.post(opts).await,
+      IPFSCommand::FilesRead(opts) => client.post(opts).await,
+      IPFSCommand::FilesRm(opts) => client.post(opts).await,
+      IPFSCommand::FilesStat(opts) => client.post(opts).await,
+      IPFSCommand::FilesWrite(opts) => client.post_form(opts, "file", opts.file_data.clone()).await,
+      IPFSCommand::Version(opts) => client.post(opts).await,
     }
   }
 }
+
+impl_display!(IPFSCommand);
 
 // https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-chcid
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -333,7 +335,7 @@ mod tests {
 
     let version = VersionOpts::default();
     assert_eq!(version.to_string(), "version?");
-    let _ = IPFSCommands::Version(version).exec(&client).await.unwrap();
+    let _ = IPFSCommand::Version(version).exec(&client).await.unwrap();
 
     let files_create = FilesWriteOpts {
       arg: "/test.txt".into(),
@@ -347,7 +349,7 @@ mod tests {
       hash: None,
     };
     assert_eq!(files_create.to_string(), "files/write?arg=%2Ftest.txt&create=true");
-    let _ = IPFSCommands::FilesWrite(files_create).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesWrite(files_create).exec(&client).await.unwrap();
 
     let files_stat = FilesStatOpts {
       arg: "/test.txt".into(),
@@ -357,7 +359,7 @@ mod tests {
       with_local: None,
     };
     assert_eq!(files_stat.to_string(), "files/stat?arg=%2Ftest.txt");
-    let _ = IPFSCommands::FilesStat(files_stat).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesStat(files_stat).exec(&client).await.unwrap();
 
     let files_ch_cid = FilesChCidOpts {
       arg: "/test.txt".into(),
@@ -365,7 +367,7 @@ mod tests {
       hash: None,
     };
     assert_eq!(files_ch_cid.to_string(), "files/chcid?arg=%2Ftest.txt");
-    let _ = IPFSCommands::FilesChCid(files_ch_cid).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesChCid(files_ch_cid).exec(&client).await.unwrap();
 
     let files_read = FilesReadOpts {
       arg: "/test.txt".into(),
@@ -373,7 +375,7 @@ mod tests {
       count: None,
     };
     assert_eq!(files_read.to_string(), "files/read?arg=%2Ftest.txt");
-    let res = IPFSCommands::FilesRead(files_read).exec(&client).await.unwrap();
+    let res = IPFSCommand::FilesRead(files_read).exec(&client).await.unwrap();
     let res_str = String::from_utf8(res).unwrap();
     assert_eq!(res_str, "hello world!");
     
@@ -383,7 +385,7 @@ mod tests {
       parents: None,
     };
     assert_eq!(files_cp.to_string(), "files/cp?arg=%2Ftest.txt&arg=%2Ftest2.txt");
-    let _ = IPFSCommands::FilesCp(files_cp).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesCp(files_cp).exec(&client).await.unwrap();
 
     let files_mkdir = FilesMkdirOpts {
       arg: "/new-dir".into(),
@@ -392,14 +394,14 @@ mod tests {
       hash: None,
     };
     assert_eq!(files_mkdir.to_string(), "files/mkdir?arg=%2Fnew-dir");
-    let _ = IPFSCommands::FilesMkdir(files_mkdir).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesMkdir(files_mkdir).exec(&client).await.unwrap();
 
     let files_mv = FilesMvOpts {
       source: "/test2.txt".into(),
       dest: "/new-dir/test2.txt".into(),
     };
     assert_eq!(files_mv.to_string(), "files/mv?arg=/test2.txt&arg=/new-dir/test2.txt");
-    let _ = IPFSCommands::FilesMv(files_mv).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesMv(files_mv).exec(&client).await.unwrap();
 
     let files_rm = FilesRmOpts {
       arg: "/new-dir".into(),
@@ -407,11 +409,11 @@ mod tests {
       force: Some(true),
     };
     assert_eq!(files_rm.to_string(), "files/rm?arg=%2Fnew-dir&force=true");
-    let _ = IPFSCommands::FilesRm(files_rm).exec(&client).await.unwrap();
+    let _ = IPFSCommand::FilesRm(files_rm).exec(&client).await.unwrap();
 
     let files_ls = FilesLsOpts::default();
     assert_eq!(files_ls.to_string(), "files/ls?arg=%2F");
-    let res = IPFSCommands::FilesLs(files_ls).exec(&client).await.unwrap();
+    let res = IPFSCommand::FilesLs(files_ls).exec(&client).await.unwrap();
     let res_str = String::from_utf8(res).unwrap();
     assert_eq!(res_str, "{\"Entries\":[{\"Name\":\"test.txt\",\"Type\":0,\"Size\":0,\"Hash\":\"\"}]}\n");
   }

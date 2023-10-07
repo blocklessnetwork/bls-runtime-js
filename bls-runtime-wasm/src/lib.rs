@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 pub mod fs;
 pub mod utils;
 
-use bls_common::{http::{HttpResponse, HttpRequest}};
+use bls_common::{http::{HttpResponse, HttpRequest}, ipfs::{IPFSCommand, client::IPFSClient}};
 
 use serde::{Deserialize, Serialize};
 use js_sys::{Map, Object, Reflect, WebAssembly};
@@ -266,10 +266,12 @@ impl Blockless {
         struct Env {
             exports: Arc<Mutex<RefCell<Option<Exports>>>>,
             permissions: Vec<String>,
+            ipfs_client: IPFSClient,
         }
         let env = FunctionEnv::new(&mut self.store, Env {
             exports: self.exports.clone(),
             permissions: self.permissions.clone(),
+            ipfs_client: IPFSClient::default(),
         });
 
         fn host_log(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) {
@@ -305,7 +307,7 @@ impl Blockless {
             console_log!("http_request successfully read data: {:?}", buf_str);
 
             let http_req = serde_json::from_slice::<HttpRequest>(&buf).expect("failed to deserialize http request");
-            console_log!("host_call: http_request called: {}", http_req); // TODO trace
+            console_log!("http_call: http_request called: {}", http_req); // TODO trace
 
             if !http_req.valid_permissions(&ctx.data().permissions) {
                 console_error!("invalid permissions");
@@ -354,7 +356,7 @@ impl Blockless {
                         Err(err.to_string())
                     }
                 };
-                console_log!("host_call: http_call_response: {:?}", http_call_response);
+                console_log!("http_call: http_call_response: {:?}", http_call_response);
                 let data = serde_json::to_vec(&http_call_response).expect("failed to serialize module call response");
                 let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
 
@@ -371,10 +373,86 @@ impl Blockless {
             0
         }
 
+        fn ipfs_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32, callback_id: u64) -> u32 {
+            let exports = {
+                let binding = ctx.data().exports.lock().unwrap();
+                let exports = binding.borrow().to_owned().expect("exports should have been set");
+                exports
+            };
+            let memory = exports.get_memory("memory").expect("memory export wasn't found");
+
+            let mut buf = vec![0u8; len as usize];
+            memory.view(&ctx.as_store_ref()).read(ptr as u64, &mut buf).expect("failed to read memory");
+
+            // required to write data back to guest
+            // TODO: find another way to do this without manually allocating memory?
+            let alloc_func = exports.get_function("alloc").expect("alloc function not found");
+            let ipfs_callback = exports.get_function("ipfs_callback").expect("ipfs_callback function not found");
+
+            let buf_str = std::str::from_utf8(&buf).unwrap();
+            console_log!("ipfs_request successfully read data: {:?}", buf_str);
+
+            let ipfs_command = serde_json::from_slice::<IPFSCommand>(&buf).expect("failed to deserialize http request");
+            console_log!("ipfs_call: ipfs_request called: {}", ipfs_command); // TODO trace
+
+            // TODO any IPFS permissions?
+
+            let boxed_ctx_ref: Box<FunctionEnvMut<Env>> = Box::new(ctx);
+            let static_ctx_ref: &'static mut FunctionEnvMut<Env> = unsafe { std::mem::transmute(Box::leak(boxed_ctx_ref)) };
+            wasm_bindgen_futures::spawn_local(async move {
+                let memory = exports.get_memory("memory").expect("memory export wasn't found");
+
+                // NOTE: convert callbacks to wasm_bindgen types - since return values do not seem to work!
+                let memory_obj: WebAssembly::Memory = exports
+                    .get_extern("memory")
+                    .expect("memory export wasn't found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+                let ipfs_callback: js_sys::Function = exports
+                    .get_function("ipfs_callback")
+                    .expect("ipfs_callback function not found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+                let alloc_func: js_sys::Function = exports
+                    .get_function("alloc")
+                    .expect("alloc function not found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+
+                let ipfs_call_response = match ipfs_command.exec(&static_ctx_ref.data().ipfs_client).await {
+                    Ok(response) => Ok(response),
+                    Err(err) => {
+                        console_error!("Error while running ipfs_command.exec: {}", err);
+                        Err(err.to_string())
+                    }
+                };
+                let data = serde_json::to_vec(&ipfs_call_response).expect("failed to serialize module call response");
+                let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
+
+                match ipfs_callback.call2(&JsValue::undefined(), &JsValue::from(result_ptr), &JsValue::from(callback_id)) {
+                    Ok(_val) => console_log!("ipfs_callback called successfully"),
+                    Err(err) => console_error!("Error while running ipfs_callback {}", err.as_string().unwrap_or_default()),
+                };
+
+                // manually deallocate memory
+                unsafe {
+                    let _reclaimed = Box::from_raw(static_ctx_ref);
+                }
+            });
+            0
+        }
+
         let imports = imports! {
             "blockless" => {
                 "host_log" => Function::new_typed_with_env(&mut self.store, &env, host_log),
                 "http_call" => Function::new_typed_with_env(&mut self.store, &env, http_call),
+                "ipfs_call" => Function::new_typed_with_env(&mut self.store, &env, ipfs_call),
             },
         };
 
