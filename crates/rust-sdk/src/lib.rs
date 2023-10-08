@@ -183,6 +183,23 @@ pub fn _start() {
 mod tests {
     use super::*;
 
+    // requires wasm32-wasi target
+    #[test]
+    fn test_env_vars() {
+        // get env vars
+        let env_vars = std::env::vars().collect::<Vec<(String, String)>>();
+        log!("{:?}", env_vars);
+    }
+
+    // requires wasm32-wasi target
+    #[test]
+    fn test_args() {
+        // get passed in args
+        let args = std::env::args().collect::<Vec<String>>();
+        let args = args.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+        log!("{:?}", args);
+    }
+
     #[test]
     fn test_http_call() {
         let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
