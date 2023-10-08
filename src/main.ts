@@ -26,8 +26,8 @@ const bls = new Blockless({
 
 // const wasmPath = "../simple.wasm";
 // const wasmPath = "../basics.wasm";
-const wasmPath = "../release.wasm";
-// const wasmPath = "../crates/rust-sdk/target/wasm32-unknown-unknown/release/rust_sdk.wasm";
+// const wasmPath = "../release.wasm";
+const wasmPath = "../crates/rust-sdk/target/wasm32-unknown-unknown/release/rust_sdk.wasm";
 // const wasmPath = "../crates/rust-sdk/target/wasm32-wasi/release/rust_sdk.wasm";
 // const wasmPath = "../release-asc.wasm";
 const wasmModule = await WebAssembly.compileStreaming(fetch(wasmPath));
