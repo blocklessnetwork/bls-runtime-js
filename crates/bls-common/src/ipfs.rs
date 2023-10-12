@@ -99,7 +99,7 @@ impl IPFSCommand {
       IPFSCommand::FilesRead(opts) => client.post(opts).await,
       IPFSCommand::FilesRm(opts) => client.post(opts).await,
       IPFSCommand::FilesStat(opts) => client.post(opts).await,
-      IPFSCommand::FilesWrite(opts) => client.post_form(opts, "file", opts.file_data.clone()).await,
+      IPFSCommand::FilesWrite(opts) => client.post_form(opts, "file", opts.data.clone()).await,
       IPFSCommand::Version(opts) => client.post(opts).await,
     }
   }
@@ -135,7 +135,7 @@ impl_query_string_conversions!("files/cp?", FilesCpOpts);
 // https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-ls
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FilesLsOpts {
-  pub arg: String,
+  pub arg: String, // NOTE: supported by browser only
   pub long: Option<bool>,
   pub u: Option<bool>,
 }
@@ -232,7 +232,7 @@ pub struct FilesWriteOpts {
   pub cid_version: Option<u64>,
   pub hash: Option<String>,
   #[serde(skip)]
-  pub file_data: Vec<u8>,
+  pub data: Vec<u8>,
 }
 impl_query_string_conversions!("files/write?", FilesWriteOpts);
 
@@ -339,7 +339,7 @@ mod tests {
 
     let files_create = FilesWriteOpts {
       arg: "/test.txt".into(),
-      file_data: "hello world!".as_bytes().to_vec(),
+      data: "hello world!".as_bytes().to_vec(),
       offset: None,
       create: Some(true),
       truncate: None,
