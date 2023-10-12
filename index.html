@@ -9,6 +9,13 @@
         color: aliceblue;
       }
     </style>
+    <script>
+      if('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.ts', { scope: '/' })
+        })
+      }
+    </script>
     <title>Vite + TS</title>
   </head>
   <body>
