@@ -48,17 +48,11 @@ impl S3Client {
     Ok(())
   }
 
-  pub async fn list(&self, opts: S3ListOpts) -> Result<Vec<u8>, &'static str> {
-    // build the request to list objects in the S3 bucket
-    let mut request = http::Request::builder()
-      .method("GET")
-      .uri(&opts.config.endpoint)
-      .header("Accept", "application/json") 
-      .body(Default::default())
-      .unwrap();
+  pub async fn exec(&self, config: &S3Config, request: impl Into<http::Request<Vec<u8>>>) -> Result<Vec<u8>, &'static str> {
+    let mut request = request.into();
 
     // sign the request
-    let _ = self.sign_request(&opts.config, &mut request)?;
+    let _ = self.sign_request(&config, &mut request)?;
 
     // perform the request
     let reqwest_request = reqwest::Request::try_from(request).unwrap();
@@ -73,242 +67,6 @@ impl S3Client {
 
     let got_text = response.text().await.map_err(|_| "failed to get response text")?;
     Ok(got_text.as_bytes().to_vec())
-
-    // let bucket = Bucket::new(&opts.bucket_name, self.region.as_ref().unwrap().clone(), self.credentials.as_ref().unwrap().clone())
-    //   .map_err(|e| {
-    //     println!("list bucket error: {:?}", e);
-    //     "bucket error"
-    //   })?;
-    // let list = bucket.list(opts.prefix, opts.delimiter)
-    //   .await
-    //   .map_err(|e| {
-    //     println!("list bucket error: {:?}", e);
-    //     "list bucket error"
-    //   })?;
-    // let results = list
-    //   .into_iter()
-    //   .map(|item| {
-    //     let item_content = item.contents
-    //       .into_iter()
-    //       .map(|c| {
-    //         S3ListItemResponseContent {
-    //           last_modified: c.last_modified,
-    //           e_tag: c.e_tag,
-    //           storage_class: c.storage_class,
-    //           key: c.key,
-    //           size: c.size,
-    //         }
-    //       })
-    //       .collect::<Vec<_>>();
-    //     S3ListItemResponse {
-    //       name: item.name,
-    //       is_truncated: item.is_truncated,
-    //       prefix: item.prefix,
-    //       contents: item_content,
-    //     }
-    //   })
-    //   .collect::<Vec<_>>();
-    // Ok(results)
-  }
-
-  pub async fn create(&mut self, opts: &S3CreateOpts) -> Result<Vec<u8>, &'static str> {
-    let mut request = http::Request::builder()
-        .method("PUT")
-        .uri(format!("{}/{}", &opts.config.endpoint, opts.bucket_name))
-        .header("Accept", "application/json")
-        .body(Default::default())
-        .unwrap();
-
-    // sign the request
-    let _ = self.sign_request(&opts.config, &mut request)?;
-
-    // perform the request
-    let reqwest_request = reqwest::Request::try_from(request).unwrap();
-    let response = reqwest::Client::new()
-        .execute(reqwest_request)
-        .await
-        .map_err(|_| "failed to execute request")?;
-
-    if !response.status().is_success() {
-      return Err("failed to get response");
-    }
-
-    let got_text = response.text().await.map_err(|_| "failed to get response text")?;
-    Ok(got_text.as_bytes().to_vec())
-
-    // let bucket_config = BucketConfiguration::default();
-    //   BucketConfiguration {
-    //     acl: CannedBucketAcl::Private,
-    //     object_lock_enabled: false,
-    //     grant_full_control: None,
-    //     grant_read: None,
-    //     grant_read_acp: None,
-    //     grant_write: None,
-    //     grant_write_acp: None,
-    //     location_constraint: None,
-    // };
-    // let mut config = config;
-    // config.set_region(region.clone());
-    // let command = Command::CreateBucket { config };
-    // let bucket = Bucket::new(name, region, credentials)?;
-    // let request = RequestImpl::new(&bucket, "", command)?;
-    // let response_data = request.response_data(false).await?;
-    // let response_text = response_data.as_str()?;
-    // Ok(CreateBucketResponse {
-    //     bucket,
-    //     response_text: response_text.to_string(),
-    //     response_code: response_data.status_code(),
-    // })
-
-    // pub struct Reqwest<'a> {
-    //   pub bucket: &'a Bucket,
-    //   pub path: &'a str,
-    //   pub command: Command<'a>,
-    // }
-    
-    // let create_response = Bucket::create(&opts.bucket_name, self.region.as_ref().unwrap().clone(), self.credentials.as_ref().unwrap().clone(), bucket_config)
-    //   .await  
-    //   .map_err(|e| {
-    //     println!("create bucket error: {:?}", e);
-    //     "create bucket error"
-    //   })?;
-    // Ok(S3Response {
-    //   headers: Default::default(),
-    //   status_code: create_response.response_code,
-    //   bytes: create_response.response_text.as_bytes().to_vec(),
-    // })
-  }
-
-  pub async fn get(&self, opts: &S3GetOpts) -> Result<Vec<u8>, &'static str> {
-    // build the request to list objects in the S3 bucket
-    let mut request = http::Request::builder()
-        .method("GET")
-        .uri(format!("{}/{}?prefix={}", opts.config.endpoint, opts.bucket_name, opts.path))
-        .header("Accept", "application/json")
-        .body(Default::default())
-        .map_err(|_| "failed to build request")?;
-
-    // sign the request
-    let _ = self.sign_request(&opts.config, &mut request)?;
-
-    // perform the request
-    let reqwest_request = reqwest::Request::try_from(request).unwrap();
-    let response = reqwest::Client::new()
-        .execute(reqwest_request)
-        .await
-        .map_err(|_| "failed to execute request")?;
-
-    if !response.status().is_success() {
-      return Err("failed to get response");
-    }
-
-    let got_text = response.text().await.map_err(|_| "failed to get response text")?;
-    Ok(got_text.as_bytes().to_vec())
- 
-    // let bucket = Bucket::new(&opts.bucket_name, self.region.as_ref().unwrap().clone(), self.credentials.as_ref().unwrap().clone())
-    //   .map_err(|e| {
-    //     println!("get bucket error: {:?}", e);
-    //     "bucket error"
-    //   })?;
-    // let get_response = bucket.get_object(&opts.path)
-    //   .await
-    //   .map_err(|e| {
-    //     println!("get object error: {:?}", e);
-    //     "get object error"
-    //   })?;
-    // Ok(S3Response {
-    //   status_code: get_response.status_code(),
-    //   headers: get_response.headers(),
-    //   bytes: get_response.to_vec(),
-    // })
-  }
-
-  pub async fn put(&self, opts: &S3PutOpts) -> Result<Vec<u8>, &'static str> {
-    let mut request = http::Request::builder()
-        .method("PUT")
-        .uri(format!("{}/{}/{}", opts.config.endpoint, opts.bucket_name, opts.path))
-        .header("Accept", "application/json")
-        .header("Content-Type", "text/plain")
-        .header("Content-Length", opts.content.len().to_string())
-        .body(opts.content.clone())
-        .unwrap();
-
-     // sign the request
-     let _ = self.sign_request(&opts.config, &mut request)?;
-
-     // perform the request
-     let reqwest_request = reqwest::Request::try_from(request).unwrap();
-     let response = reqwest::Client::new()
-         .execute(reqwest_request)
-         .await
-         .map_err(|_| "failed to execute request")?;
- 
-     if !response.status().is_success() {
-       return Err("failed to get response");
-     }
- 
-     let got_text = response.text().await.map_err(|_| "failed to get response text")?;
-     Ok(got_text.as_bytes().to_vec())
-
-    // let bucket = Bucket::new(&opts.bucket_name, self.region.as_ref().unwrap().clone(), self.credentials.as_ref().unwrap().clone())
-    //   .map_err(|e| {
-    //     println!("put bucket error: {:?}", e);
-    //     "bucket error"
-    //   })?;
-    // let put_response = bucket.put_object(&opts.path, opts.content.as_slice())
-    //   .await
-    //   .map_err(|e| {
-    //     println!("put object error: {:?}", e);
-    //     "put object error"
-    //   })?;
-    // Ok(S3Response {
-    //   status_code: put_response.status_code(),
-    //   headers: put_response.headers(),
-    //   bytes: put_response.to_vec(),
-    // })
-  }
-
-  pub async fn delete(&self, opts: &S3DeleteOpts) -> Result<Vec<u8>, &'static str> {
-    let mut request = http::Request::builder()
-        .method("DELETE")
-        .uri(format!("{}/{}/{}", opts.config.endpoint, opts.bucket_name, opts.path))
-        .header("Accept", "application/json")
-        .body(Default::default())
-        .unwrap();
-
-     // sign the request
-     let _ = self.sign_request(&opts.config, &mut request)?;
-
-     // perform the request
-     let reqwest_request = reqwest::Request::try_from(request).unwrap();
-     let response = reqwest::Client::new()
-         .execute(reqwest_request)
-         .await
-         .map_err(|_| "failed to execute request")?;
- 
-     if !response.status().is_success() {
-       return Err("failed to get response");
-     }
- 
-     let got_text = response.text().await.map_err(|_| "failed to get response text")?;
-     Ok(got_text.as_bytes().to_vec())
-
-    // let bucket = Bucket::new(&opts.bucket_name, self.region.as_ref().unwrap().clone(), self.credentials.as_ref().unwrap().clone())
-    //   .map_err(|e| {
-    //     println!("delete bucket error: {:?}", e);
-    //     "bucket error"
-    //   })?;
-    // let delete_response = bucket.delete_object(&opts.path)
-    //   .await
-    //   .map_err(|e| {
-    //     println!("delete object error: {:?}", e);
-    //     "delete object error"
-    //   })?;
-    // Ok(S3Response {
-    //   status_code: delete_response.status_code(),
-    //   headers: delete_response.headers(),
-    //   bytes: delete_response.to_vec(),
-    // })
   }
 }
 
@@ -326,11 +84,11 @@ impl_display!(S3Command);
 impl S3Command {
   pub async fn exec(&self, client: &mut S3Client) -> Result<Vec<u8>, &'static str> {
     let res = match self {
-      S3Command::S3List(opts) => client.list(opts.clone()).await?,
-      S3Command::S3Create(opts) => client.create(opts).await?,
-      S3Command::S3Get(opts) => client.get(opts).await?,
-      S3Command::S3Put(opts) => client.put(opts).await?,
-      S3Command::S3Delete(opts) => client.delete(opts).await?,
+      S3Command::S3List(opts) => client.exec(&opts.config, opts.clone()).await?,
+      S3Command::S3Create(opts) => client.exec(&opts.config, opts.clone()).await?,
+      S3Command::S3Get(opts) => client.exec(&opts.config, opts.clone()).await?,
+      S3Command::S3Put(opts) => client.exec(&opts.config, opts.clone()).await?,
+      S3Command::S3Delete(opts) => client.exec(&opts.config, opts.clone()).await?,
     };
     Ok(res)
   }
@@ -343,6 +101,17 @@ pub struct S3ListOpts {
   pub bucket_name: String,
   pub prefix: String,
   pub delimiter: Option<String>,
+}
+impl Into<http::Request<Vec<u8>>> for S3ListOpts {
+  fn into(self) -> http::Request<Vec<u8>> {
+    let request = http::Request::builder()
+      .method("GET")
+      .uri(&self.config.endpoint)
+      .header("Accept", "application/json") 
+      .body(Default::default())
+      .unwrap();
+    request
+  }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -368,6 +137,17 @@ pub struct S3CreateOpts {
 
   pub bucket_name: String,
 }
+impl Into<http::Request<Vec<u8>>> for S3CreateOpts {
+  fn into(self) -> http::Request<Vec<u8>> {
+    let request = http::Request::builder()
+      .method("PUT")
+      .uri(format!("{}/{}", &self.config.endpoint, self.bucket_name))
+      .header("Accept", "application/json")
+      .body(Default::default())
+      .unwrap();
+    request
+  }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct S3GetOpts {
@@ -375,6 +155,17 @@ pub struct S3GetOpts {
 
   pub bucket_name: String,
   pub path: String,
+}
+impl Into<http::Request<Vec<u8>>> for S3GetOpts {
+  fn into(self) -> http::Request<Vec<u8>> {
+    let request = http::Request::builder()
+      .method("GET")
+      .uri(format!("{}/{}?prefix={}", &self.config.endpoint, self.bucket_name, self.path))
+      .header("Accept", "application/json")
+      .body(Default::default())
+      .unwrap();
+    request
+  }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -385,6 +176,19 @@ pub struct S3PutOpts {
   pub path: String,
   pub content: Vec<u8>,
 }
+impl Into<http::Request<Vec<u8>>> for S3PutOpts {
+  fn into(self) -> http::Request<Vec<u8>> {
+    let request = http::Request::builder()
+      .method("PUT")
+      .uri(format!("{}/{}/{}", &self.config.endpoint, self.bucket_name, self.path))
+      .header("Accept", "application/json")
+      .header("Content-Type", "text/plain")
+      .header("Content-Length", self.content.len().to_string())
+      .body(self.content)
+      .unwrap();
+    request
+  }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct S3DeleteOpts {
@@ -392,6 +196,17 @@ pub struct S3DeleteOpts {
 
   pub bucket_name: String,
   pub path: String,
+}
+impl Into<http::Request<Vec<u8>>> for S3DeleteOpts {
+  fn into(self) -> http::Request<Vec<u8>> {
+    let request = http::Request::builder()
+      .method("DELETE")
+      .uri(format!("{}/{}/{}", &self.config.endpoint, self.bucket_name, self.path))
+      .header("Accept", "application/json")
+      .body(Default::default())
+      .unwrap();
+    request
+  }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
