@@ -212,18 +212,18 @@ pub fn dispatch_ipfs_call(module_call: IPFSCommand, callback_fn: fn(Result<Vec<u
 
 #[no_mangle]
 pub fn _start() {
-    // let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
-    // dispatch_http_call(req, |response| {
-    //     log!("http callback hit!");
-    //     log!("{:?}", response);
-    // });
-    let s3_command = S3Command::S3SetConfig(S3Config {
-        access_key: "".to_string(),
-        secret_key: "".to_string(),
-        endpoint: "".to_string(),
-        region: Some("".to_string()),
+    let config = S3Config {
+        access_key: "test".to_string(),
+        secret_key: "test".to_string(),
+        endpoint: "http://localhost:4566".to_string(),
+        region: None,
+    };
+    let s3_get = S3Command::S3Get(S3GetOpts {
+        config,
+        bucket_name: "my-new-bucket".to_string(),
+        path: "some/path/".to_string(),
     });
-    dispatch_s3_call(s3_command, |response| {
+    dispatch_s3_call(s3_get, |response| {
         log!("s3 callback hit!");
         let res_str = String::from_utf8(response.unwrap()).unwrap();
         log!("{:?}", res_str);

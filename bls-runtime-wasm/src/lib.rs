@@ -500,13 +500,11 @@ impl Blockless {
                     .clone()
                     .into();
 
-                let s3_call_response = match s3_command.exec(&mut static_ctx_ref.data_mut().s3_client) {
-                    Ok(response) => Ok(response),
-                    Err(err) => {
+                let s3_call_response = s3_command.exec(&mut static_ctx_ref.data_mut().s3_client).await
+                    .map_err(|err| {
                         console_error!("Error while running s3_command.exec: {}", err);
-                        Err(err.to_string())
-                    }
-                };
+                        err
+                    });
                 let data = serde_json::to_vec(&s3_call_response).expect("failed to serialize module call response");
                 let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
 

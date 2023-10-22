@@ -36,3 +36,17 @@ cargo build -p rust-sdk --target wasm32-wasi --release
 ```sh
 npm run dev
 ```
+
+##  Testing Blockless extensions
+
+### S3
+
+First run localstack locally:
+```sh
+docker run \
+  --rm -it \
+  -e EXTRA_CORS_ALLOWED_ORIGINS="http://localhost:8080" \
+  -p 4566:4566 \
+  -p 4510-4559:4510-4559 \
+  localstack/localstack
+```
