@@ -10,7 +10,10 @@ default = ["use-wasm-bindgen"]
 use-wasm-bindgen = []
 
 [dependencies]
-reqwest = { version = "0.11.20", default-features = false, features = ["multipart"]}
+http = "0.2.9"
+reqwest = { version = "0.11.20", default-features = false, features = ["multipart", "json"] }
+aws-sigv4 = { git = "https://github.com/blocklessnetwork/aws-sigv4-wasm32", rev = "61dd490d" }
+wasm-timer = "0.2.5"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.105"
 serde_qs = "0.12.0"

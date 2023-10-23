@@ -3,6 +3,7 @@ use std::cell::{Cell, RefCell};
 
 use bls_common::{
     http::{Method, HttpRequest, HttpResponse},
+    s3::{S3Command, S3Config},
     ipfs::{IPFSCommand, FilesLsOpts},
 };
 
@@ -18,6 +19,12 @@ extern "C" {
 extern "C" {
     #[link_name = "http_call"]
     pub fn http_call(ptr: u32, len: u32, callback_id: u64) -> u32;
+}
+
+#[link(wasm_import_module = "blockless")]
+extern "C" {
+    #[link_name = "s3_call"]
+    pub fn s3_call(ptr: u32, len: u32, callback_id: u64) -> u32;
 }
 
 #[link(wasm_import_module = "blockless")]
@@ -73,6 +80,20 @@ pub fn http_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
 }
 
 #[no_mangle]
+pub fn s3_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
+    let serialized = decode_from_ptr(result_ptr);
+    let s3_call_response: Result<Vec<u8>, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
+
+    S3_CALLBACKS.with(|callbacks| {
+        if let Some(func) = callbacks.borrow_mut().remove(&callback_id) {
+            func(s3_call_response);
+        }
+    });
+
+    0 as *const u8
+}
+
+#[no_mangle]
 pub fn ipfs_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
     let serialized = decode_from_ptr(result_ptr);
     let ipfs_call_response: Result<Vec<u8>, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
@@ -107,6 +128,7 @@ fn decode_from_ptr(result_ptr: usize) -> Vec<u8> {
 thread_local! {
     static NEXT_CALLBACK_ID: Cell<u64> = Cell::new(0);
     static HTTP_CALLBACKS: RefCell<HashMap<u64, fn(Result<HttpResponse, String>)>> = RefCell::new(HashMap::new());
+    static S3_CALLBACKS: RefCell<HashMap<u64, fn(Result<Vec<u8>, String>)>> = RefCell::new(HashMap::new());
     static IPFS_CALLBACKS: RefCell<HashMap<u64, fn(Result<Vec<u8>, String>)>> = RefCell::new(HashMap::new());
 }
 
@@ -124,6 +146,32 @@ pub fn dispatch_http_call(module_call: HttpRequest, callback_fn: fn(Result<HttpR
     let result_ptr = unsafe { http_call(ptr, len, callback_id) };
     if result_ptr == 0 {
         HTTP_CALLBACKS.with(|callbacks| {
+            callbacks.borrow_mut().insert(callback_id, callback_fn);
+        });
+        return Ok(());
+    }
+
+    let error_response = decode_from_ptr(result_ptr as usize);
+    let str_error_response = String::from_utf8(error_response).map_err(|_| "Failed to convert error response to string")?;
+
+    callback_fn(Err(str_error_response));
+    Ok(())
+}
+
+pub fn dispatch_s3_call(module_call: S3Command, callback_fn: fn(Result<Vec<u8>, String>)) -> Result<(), &'static str> {
+    let data = serde_json::to_vec(&module_call).map_err(|_| "Failed to serialize request")?;
+    let ptr = data.as_ptr() as u32;
+    let len = data.len() as u32;
+
+    let callback_id = NEXT_CALLBACK_ID.with(|id| {
+        let next_id = id.get() + 1;
+        id.set(next_id);
+        next_id
+    });
+
+    let result_ptr = unsafe { s3_call(ptr, len, callback_id) };
+    if result_ptr == 0 {
+        S3_CALLBACKS.with(|callbacks| {
             callbacks.borrow_mut().insert(callback_id, callback_fn);
         });
         return Ok(());
@@ -164,18 +212,29 @@ pub fn dispatch_ipfs_call(module_call: IPFSCommand, callback_fn: fn(Result<Vec<u
 
 #[no_mangle]
 pub fn _start() {
-    let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
-    dispatch_http_call(req, |response| {
-        log!("http callback hit!");
-        log!("{:?}", response);
+    let config = S3Config {
+        access_key: "test".to_string(),
+        secret_key: "test".to_string(),
+        endpoint: "http://localhost:4566".to_string(),
+        region: None,
+    };
+    let s3_get = S3Command::S3Get(S3GetOpts {
+        config,
+        bucket_name: "my-new-bucket".to_string(),
+        path: "some/path/".to_string(),
+    });
+    dispatch_s3_call(s3_get, |response| {
+        log!("s3 callback hit!");
+        let res_str = String::from_utf8(response.unwrap()).unwrap();
+        log!("{:?}", res_str);
     });
 
-    let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
-    dispatch_ipfs_call(files_ls, |response| {
-        log!("ipfs callback hit!");
-        let response_str = String::from_utf8(response.unwrap()).unwrap();
-        log!("{:?}", response_str);
-    });
+    // let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
+    // dispatch_ipfs_call(files_ls, |response| {
+    //     log!("ipfs callback hit!");
+    //     let response_str = String::from_utf8(response.unwrap()).unwrap();
+    //     log!("{:?}", response_str);
+    // });
 }
 
 

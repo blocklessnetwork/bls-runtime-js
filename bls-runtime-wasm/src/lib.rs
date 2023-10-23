@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 pub mod fs;
 pub mod utils;
 
-use bls_common::{http::{HttpResponse, HttpRequest}, ipfs::{IPFSCommand, client::IPFSClient}};
+use bls_common::{http::{HttpResponse, HttpRequest}, ipfs::{IPFSCommand, client::IPFSClient}, s3::{S3Client, S3Command}};
 
 use serde::{Deserialize, Serialize};
 use js_sys::{Map, Object, Reflect, WebAssembly};
@@ -267,11 +267,13 @@ impl Blockless {
             exports: Arc<Mutex<RefCell<Option<Exports>>>>,
             permissions: Vec<String>,
             ipfs_client: IPFSClient,
+            s3_client: S3Client,
         }
         let env = FunctionEnv::new(&mut self.store, Env {
             exports: self.exports.clone(),
             permissions: self.permissions.clone(),
             ipfs_client: IPFSClient::default(),
+            s3_client: S3Client::default(),
         });
 
         fn host_log(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32) {
@@ -395,8 +397,6 @@ impl Blockless {
             let ipfs_command = serde_json::from_slice::<IPFSCommand>(&buf).expect("failed to deserialize http request");
             console_log!("ipfs_call: ipfs_request called: {}", ipfs_command); // TODO trace
 
-            // TODO any IPFS permissions?
-
             let boxed_ctx_ref: Box<FunctionEnvMut<Env>> = Box::new(ctx);
             let static_ctx_ref: &'static mut FunctionEnvMut<Env> = unsafe { std::mem::transmute(Box::leak(boxed_ctx_ref)) };
             wasm_bindgen_futures::spawn_local(async move {
@@ -448,11 +448,85 @@ impl Blockless {
             0
         }
 
+        fn s3_call(ctx: FunctionEnvMut<Env>, ptr: u32, len: u32, callback_id: u64) -> u32 {
+            let exports = {
+                let binding = ctx.data().exports.lock().unwrap();
+                let exports = binding.borrow().to_owned().expect("exports should have been set");
+                exports
+            };
+            let memory = exports.get_memory("memory").expect("memory export wasn't found");
+
+            let mut buf = vec![0u8; len as usize];
+            memory.view(&ctx.as_store_ref()).read(ptr as u64, &mut buf).expect("failed to read memory");
+
+            // required to write data back to guest
+            // TODO: find another way to do this without manually allocating memory?
+            let alloc_func = exports.get_function("alloc").expect("alloc function not found");
+            let s3_callback = exports.get_function("s3_callback").expect("s3_callback function not found");
+
+            let buf_str = std::str::from_utf8(&buf).unwrap();
+            console_log!("s3_request successfully read data: {:?}", buf_str);
+
+            let s3_command = serde_json::from_slice::<S3Command>(&buf).expect("failed to deserialize http request");
+            console_log!("s3_call: s3_request called: {}", s3_command); // TODO trace
+
+            // TODO: we may not need to use async/await here since these are all blocking calls
+
+            let boxed_ctx_ref: Box<FunctionEnvMut<Env>> = Box::new(ctx);
+            let static_ctx_ref: &'static mut FunctionEnvMut<Env> = unsafe { std::mem::transmute(Box::leak(boxed_ctx_ref)) };
+            wasm_bindgen_futures::spawn_local(async move {
+                let memory = exports.get_memory("memory").expect("memory export wasn't found");
+
+                // NOTE: convert callbacks to wasm_bindgen types - since return values do not seem to work!
+                let memory_obj: WebAssembly::Memory = exports
+                    .get_extern("memory")
+                    .expect("memory export wasn't found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+                let s3_callback: js_sys::Function = exports
+                    .get_function("s3_callback")
+                    .expect("s3_callback function not found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+                let alloc_func: js_sys::Function = exports
+                    .get_function("alloc")
+                    .expect("alloc function not found")
+                    .to_vm_extern()
+                    .as_jsvalue(&static_ctx_ref.as_store_ref())
+                    .clone()
+                    .into();
+
+                let s3_call_response = s3_command.exec(&mut static_ctx_ref.data_mut().s3_client).await
+                    .map_err(|err| {
+                        console_error!("Error while running s3_command.exec: {}", err);
+                        err
+                    });
+                let data = serde_json::to_vec(&s3_call_response).expect("failed to serialize module call response");
+                let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
+
+                match s3_callback.call2(&JsValue::undefined(), &JsValue::from(result_ptr), &JsValue::from(callback_id)) {
+                    Ok(_val) => console_log!("s3_callback called successfully"),
+                    Err(err) => console_error!("Error while running s3_callback {}", err.as_string().unwrap_or_default()),
+                };
+
+                // manually deallocate memory
+                unsafe {
+                    let _reclaimed = Box::from_raw(static_ctx_ref);
+                }
+            });
+            0
+        }
+
         let imports = imports! {
             "blockless" => {
                 "host_log" => Function::new_typed_with_env(&mut self.store, &env, host_log),
                 "http_call" => Function::new_typed_with_env(&mut self.store, &env, http_call),
                 "ipfs_call" => Function::new_typed_with_env(&mut self.store, &env, ipfs_call),
+                "s3_call" => Function::new_typed_with_env(&mut self.store, &env, s3_call),
             },
         };
 
