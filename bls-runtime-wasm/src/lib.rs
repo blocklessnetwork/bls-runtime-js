@@ -352,13 +352,16 @@ impl Blockless {
                     .into();
 
                 let http_call_response = match http_req.request().await {
-                    Ok(response) => HttpResponse::from_reqwest(response).await,
+                    Ok(response) => HttpResponse::from_reqwest(response)
+                        .await
+                        .map(|response| serde_json::to_vec(&response).map_err(|err| err.to_string()))
+                        .map_err(|err| err.to_string())
+                        .expect("failed to serialize module call response"),
                     Err(err) => {
                         console_error!("Error while running start function: {}", err);
                         Err(err.to_string())
                     }
                 };
-                console_log!("http_call: http_call_response: {:?}", http_call_response);
                 let data = serde_json::to_vec(&http_call_response).expect("failed to serialize module call response");
                 let result_ptr = utils::encode_data_to_memory(&memory_obj, &alloc_func, &data);
 
