@@ -107,12 +107,12 @@ pub fn ipfs_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
     let serialized = decode_from_ptr(result_ptr);
     let ipfs_call_response: Result<Vec<u8>, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
 
-    IPFS_CALLBACKS.with(|callbacks| {
-        if let Some(func) = callbacks.borrow_mut().remove(&callback_id) {
-            func(ipfs_call_response);
+    PENDING_CALLS.with(|calls| {
+        if let Some(sender) = calls.borrow_mut().remove(&callback_id) {
+            sender.send(ipfs_call_response).expect("Failed to send ipfs_callback result");
         }
     });
-
+    executor::EXECUTOR.with(|e| e.borrow_mut().run());
     0 as *const u8
 }
 
@@ -136,7 +136,6 @@ static NEXT_CALLBACK_ID: AtomicU64 = AtomicU64::new(0);
 // global mutable variables (since this is a single-threaded runtime)
 thread_local! {
     static PENDING_CALLS: RefCell<HashMap<u64, oneshot::Sender<Result<Vec<u8>, String>>>> = RefCell::new(HashMap::new());
-    static IPFS_CALLBACKS: RefCell<HashMap<u64, fn(Result<Vec<u8>, String>)>> = RefCell::new(HashMap::new());
 }
 
 pub async fn dispatch_host_call(
@@ -173,74 +172,64 @@ pub async fn dispatch_s3_call(request: S3Command) -> Result<Vec<u8>, &'static st
     dispatch_host_call(request, s3_call).await
 }
 
-pub fn dispatch_ipfs_call(module_call: IPFSCommand, callback_fn: fn(Result<Vec<u8>, String>)) -> Result<(), &'static str> {
-    let data = serde_json::to_vec(&module_call).map_err(|_| "Failed to serialize request")?;
-    let ptr = data.as_ptr() as u32;
-    let len = data.len() as u32;
-
-    let callback_id = NEXT_CALLBACK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-    let result_ptr = unsafe { ipfs_call(ptr, len, callback_id) };
-    if result_ptr == 0 {
-        IPFS_CALLBACKS.with(|callbacks| {
-            callbacks.borrow_mut().insert(callback_id, callback_fn);
-        });
-        return Ok(());
-    }
-
-    let error_response = decode_from_ptr(result_ptr as usize);
-    let str_error_response = String::from_utf8(error_response).map_err(|_| "Failed to convert error response to string")?;
-
-    callback_fn(Err(str_error_response));
-    Ok(())
+pub async fn dispatch_ipfs_call(request: IPFSCommand) -> Result<Vec<u8>, &'static str> {
+    dispatch_host_call(request, ipfs_call).await
 }
 
 #[no_mangle]
 pub fn _start() {
     executor::spawn_local(async {
-        let config = S3Config {
-            access_key: "test".to_string(),
-            secret_key: "test".to_string(),
-            endpoint: "http://localhost:4566".to_string(),
-            region: None,
-        };
-
-        let result = dispatch_s3_call(S3Command::S3Create(S3CreateOpts {
-            config: config.clone(),
-            bucket_name: "my-new-bucket".to_string(),
-        })).await;
-        log!("s3 S3Create callback hit!");
-        let res_str = String::from_utf8(result.unwrap()).unwrap();
-        log!("{:?}", res_str);
-
-        let result = dispatch_s3_call(S3Command::S3Put(S3PutOpts {
-            config: config.clone(),
-            bucket_name: "my-new-bucket".to_string(),
-            path: "some/path/hello.txt".to_string(),
-            content: "hello world".as_bytes().to_vec(),
-        })).await;
-        log!("s3 S3Put callback hit!");
-        let res_str = String::from_utf8(result.unwrap()).unwrap();
-        log!("{:?}", res_str);
-
-        let result = dispatch_s3_call(S3Command::S3Get(S3GetOpts {
-            config: config.clone(),
-            bucket_name: "my-new-bucket".to_string(),
-            path: "some/path/hello.txt".to_string(),
-        })).await;
-        log!("s3 S3Get callback hit!");
-        let res_str = String::from_utf8(result.unwrap()).unwrap();
-        log!("{:?}", res_str);
-
-        let result = dispatch_s3_call(S3Command::S3Delete(S3DeleteOpts {
-            config,
-            bucket_name: "my-new-bucket".to_string(),
-            path: "some/path/hello.txt".to_string(),
-        })).await;
-        log!("s3 S3Delete callback hit!");
+        let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
+        let result = dispatch_ipfs_call(files_ls).await;
+        log!("ipfs callback hit!");
         let res_str = String::from_utf8(result.unwrap()).unwrap();
         log!("{:?}", res_str);
     });
+
+    // executor::spawn_local(async {
+    //     let config = S3Config {
+    //         access_key: "test".to_string(),
+    //         secret_key: "test".to_string(),
+    //         endpoint: "http://localhost:4566".to_string(),
+    //         region: None,
+    //     };
+
+    //     let result = dispatch_s3_call(S3Command::S3Create(S3CreateOpts {
+    //         config: config.clone(),
+    //         bucket_name: "my-new-bucket".to_string(),
+    //     })).await;
+    //     log!("s3 S3Create callback hit!");
+    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
+    //     log!("{:?}", res_str);
+
+    //     let result = dispatch_s3_call(S3Command::S3Put(S3PutOpts {
+    //         config: config.clone(),
+    //         bucket_name: "my-new-bucket".to_string(),
+    //         path: "some/path/hello.txt".to_string(),
+    //         content: "hello world".as_bytes().to_vec(),
+    //     })).await;
+    //     log!("s3 S3Put callback hit!");
+    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
+    //     log!("{:?}", res_str);
+
+    //     let result = dispatch_s3_call(S3Command::S3Get(S3GetOpts {
+    //         config: config.clone(),
+    //         bucket_name: "my-new-bucket".to_string(),
+    //         path: "some/path/hello.txt".to_string(),
+    //     })).await;
+    //     log!("s3 S3Get callback hit!");
+    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
+    //     log!("{:?}", res_str);
+
+    //     let result = dispatch_s3_call(S3Command::S3Delete(S3DeleteOpts {
+    //         config,
+    //         bucket_name: "my-new-bucket".to_string(),
+    //         path: "some/path/hello.txt".to_string(),
+    //     })).await;
+    //     log!("s3 S3Delete callback hit!");
+    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
+    //     log!("{:?}", res_str);
+    // });
         
     // executor::spawn_local(async {
     //     let sum = add(1, 5).await;
