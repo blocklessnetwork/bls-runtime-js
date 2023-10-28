@@ -179,90 +179,34 @@ pub async fn dispatch_ipfs_call(request: IPFSCommand) -> Result<Vec<u8>, &'stati
 #[no_mangle]
 pub fn _start() {
     executor::spawn_local(async {
-        let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
-        let result = dispatch_ipfs_call(files_ls).await;
-        log!("ipfs callback hit!");
-        let res_str = String::from_utf8(result.unwrap()).unwrap();
-        log!("{:?}", res_str);
+        let response1 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get)).await;
+        log!("First http callback hit!");
+        log!("{:?}", response1);
+
+        let response2 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/2", Method::Get)).await;
+        log!("Second http callback hit!");
+        log!("{:?}", response2);
+
+        let response3 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/3", Method::Get)).await;
+        log!("Third http callback hit!");
+        log!("{:?}", response3);
+
+        let response4 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/4", Method::Get)).await;
+        log!("Fourth http callback hit!");
+        log!("{:?}", response4);
+
+        let response5 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/5", Method::Get)).await;
+        log!("Fifth http callback hit!");
+        log!("{:?}", response5);
+
+        let response6 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/6", Method::Get)).await;
+        log!("Sixth http callback hit!");
+        log!("{:?}", response6);
+
+        let response7 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/7", Method::Get)).await;
+        log!("Seventh http callback hit!");
+        log!("{:?}", response7);
     });
-
-    // executor::spawn_local(async {
-    //     let config = S3Config {
-    //         access_key: "test".to_string(),
-    //         secret_key: "test".to_string(),
-    //         endpoint: "http://localhost:4566".to_string(),
-    //         region: None,
-    //     };
-
-    //     let result = dispatch_s3_call(S3Command::S3Create(S3CreateOpts {
-    //         config: config.clone(),
-    //         bucket_name: "my-new-bucket".to_string(),
-    //     })).await;
-    //     log!("s3 S3Create callback hit!");
-    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
-    //     log!("{:?}", res_str);
-
-    //     let result = dispatch_s3_call(S3Command::S3Put(S3PutOpts {
-    //         config: config.clone(),
-    //         bucket_name: "my-new-bucket".to_string(),
-    //         path: "some/path/hello.txt".to_string(),
-    //         content: "hello world".as_bytes().to_vec(),
-    //     })).await;
-    //     log!("s3 S3Put callback hit!");
-    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
-    //     log!("{:?}", res_str);
-
-    //     let result = dispatch_s3_call(S3Command::S3Get(S3GetOpts {
-    //         config: config.clone(),
-    //         bucket_name: "my-new-bucket".to_string(),
-    //         path: "some/path/hello.txt".to_string(),
-    //     })).await;
-    //     log!("s3 S3Get callback hit!");
-    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
-    //     log!("{:?}", res_str);
-
-    //     let result = dispatch_s3_call(S3Command::S3Delete(S3DeleteOpts {
-    //         config,
-    //         bucket_name: "my-new-bucket".to_string(),
-    //         path: "some/path/hello.txt".to_string(),
-    //     })).await;
-    //     log!("s3 S3Delete callback hit!");
-    //     let res_str = String::from_utf8(result.unwrap()).unwrap();
-    //     log!("{:?}", res_str);
-    // });
-        
-    // executor::spawn_local(async {
-    //     let sum = add(1, 5).await;
-    //     log!("sum: {}", sum);
-        
-    //     let response1 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get)).await;
-    //     log!("First http callback hit!");
-    //     log!("{:?}", response1);
-
-    //     let response2 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/2", Method::Get)).await;
-    //     log!("Second http callback hit!");
-    //     log!("{:?}", response2);
-
-    //     let response3 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/3", Method::Get)).await;
-    //     log!("Third http callback hit!");
-    //     log!("{:?}", response3);
-
-    //     let response4 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/4", Method::Get)).await;
-    //     log!("Fourth http callback hit!");
-    //     log!("{:?}", response4);
-
-    //     let response5 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/5", Method::Get)).await;
-    //     log!("Fifth http callback hit!");
-    //     log!("{:?}", response5);
-
-    //     let response6 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/6", Method::Get)).await;
-    //     log!("Sixth http callback hit!");
-    //     log!("{:?}", response6);
-
-    //     let response7 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/7", Method::Get)).await;
-    //     log!("Seventh http callback hit!");
-    //     log!("{:?}", response7);
-    // });
 }
 
 
@@ -287,23 +231,44 @@ mod tests {
         log!("{:?}", args);
     }
 
-    // #[test]
-    // fn test_http_call() {
-    //     let req = HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get);
-    //     dispatch_http_call(req, |response| {
-    //         log!("callback hit!");
-    //         log!("{:?}", response);
-    //     });
-    // }
+    // TODO: convert to example since cant test in this environment
+    #[test]
+    fn test_http_call() {
+        executor::spawn_local(async {
+            let response = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get)).await;
+            log!("First http callback hit!");
+            log!("{:?}", response);
+        });
+    }
 
+    // TODO: convert to example since cant test in this environment
+    #[test]
+    fn test_s3_call() {
+        executor::spawn_local(async {
+            let result = dispatch_s3_call(S3Command::S3Create(S3CreateOpts {
+                config: S3Config {
+                    access_key: "test".to_string(),
+                    secret_key: "test".to_string(),
+                    endpoint: "http://localhost:4566".to_string(),
+                    region: None,
+                },
+                bucket_name: "my-new-bucket".to_string(),
+            })).await;
+            log!("s3 S3Create callback hit!");
+            let res_str = String::from_utf8(result.unwrap()).unwrap();
+            log!("{:?}", res_str);
+        });
+    }
+
+    // TODO: convert to example since cant test in this environment
     #[test]
     fn test_ipfs_call() {
-        let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
-        dispatch_ipfs_call(files_ls, |response| {
-            log!("ipfs callback hit!");
-            let response_str = String::from_utf8(response.unwrap()).unwrap();
-            log!("{:?}", response_str);
-        });
+        executor::spawn_local(async {
+            let files_ls = IPFSCommand::FilesLs(FilesLsOpts::default());
+            let result = dispatch_ipfs_call(files_ls).await;
+            let res_str = String::from_utf8(result.unwrap()).unwrap();
+            log!("{:?}", res_str);
+        });  
     }
 
     #[test]
