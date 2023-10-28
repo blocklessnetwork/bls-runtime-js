@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::cell::{Cell, RefCell};
 use std::fmt::Debug;
 use std::sync::atomic::AtomicU64;
+use bls_common::s3::{S3CreateOpts, S3PutOpts, S3DeleteOpts};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use futures::channel::oneshot;
@@ -80,7 +81,7 @@ pub fn http_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
 
     PENDING_CALLS.with(|calls| {
         if let Some(sender) = calls.borrow_mut().remove(&callback_id) {
-            sender.send(http_call_response).expect("Failed to send result");
+            sender.send(http_call_response).expect("Failed to send http_callback result");
         }
     });
     executor::EXECUTOR.with(|e| e.borrow_mut().run());
@@ -92,12 +93,12 @@ pub fn s3_callback(result_ptr: usize, callback_id: u64) -> *const u8 {
     let serialized = decode_from_ptr(result_ptr);
     let s3_call_response: Result<Vec<u8>, String> = serde_json::from_slice(&serialized[..]).unwrap(); // TODO: handle error
 
-    S3_CALLBACKS.with(|callbacks| {
-        if let Some(func) = callbacks.borrow_mut().remove(&callback_id) {
-            func(s3_call_response);
+    PENDING_CALLS.with(|calls| {
+        if let Some(sender) = calls.borrow_mut().remove(&callback_id) {
+            sender.send(s3_call_response).expect("Failed to send s3_callback result");
         }
     });
-
+    executor::EXECUTOR.with(|e| e.borrow_mut().run());
     0 as *const u8
 }
 
@@ -135,14 +136,13 @@ static NEXT_CALLBACK_ID: AtomicU64 = AtomicU64::new(0);
 // global mutable variables (since this is a single-threaded runtime)
 thread_local! {
     static PENDING_CALLS: RefCell<HashMap<u64, oneshot::Sender<Result<Vec<u8>, String>>>> = RefCell::new(HashMap::new());
-    static S3_CALLBACKS: RefCell<HashMap<u64, fn(Result<Vec<u8>, String>)>> = RefCell::new(HashMap::new());
     static IPFS_CALLBACKS: RefCell<HashMap<u64, fn(Result<Vec<u8>, String>)>> = RefCell::new(HashMap::new());
 }
 
-pub async fn dispatch_host_call<D: DeserializeOwned>(
+pub async fn dispatch_host_call(
     data: impl Serialize,
     host_call_fn: unsafe extern "C" fn(u32, u32, u64) -> u32,
-) -> Result<D, &'static str> {
+) -> Result<Vec<u8>, &'static str> {
     let (sender, receiver) = oneshot::channel();
 
     let callback_id = NEXT_CALLBACK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -160,36 +160,17 @@ pub async fn dispatch_host_call<D: DeserializeOwned>(
 
     let response = receiver.await
         .map_err(|_| "Failed to receive response")?
-        .map(|response| serde_json::from_slice::<D>(&response[..]).map_err(|_| "Failed to deserialize response"))
-        .map_err(|_| "Failed to deserialize response")?;
-    response
+        .map_err(|_| "Failed to retrieve data")?;
+    Ok(response)
 }
 
 pub async fn dispatch_http_call(request: HttpRequest) -> Result<HttpResponse, &'static str> {
-    dispatch_host_call(request, http_call).await
+    let response = dispatch_host_call(request, http_call).await;
+    response.map(|response| serde_json::from_slice::<HttpResponse>(&response[..]).map_err(|_| "Failed to deserialize HttpResponse"))?
 }
 
-// TODO: convert remaining methods to use dispatch_host_call
-
-pub fn dispatch_s3_call(module_call: S3Command, callback_fn: fn(Result<Vec<u8>, String>)) -> Result<(), &'static str> {
-    let data = serde_json::to_vec(&module_call).map_err(|_| "Failed to serialize request")?;
-    let ptr = data.as_ptr() as u32;
-    let len = data.len() as u32;
-
-    let callback_id = NEXT_CALLBACK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let result_ptr = unsafe { s3_call(ptr, len, callback_id) };
-    if result_ptr == 0 {
-        S3_CALLBACKS.with(|callbacks| {
-            callbacks.borrow_mut().insert(callback_id, callback_fn);
-        });
-        return Ok(());
-    }
-
-    let error_response = decode_from_ptr(result_ptr as usize);
-    let str_error_response = String::from_utf8(error_response).map_err(|_| "Failed to convert error response to string")?;
-
-    callback_fn(Err(str_error_response));
-    Ok(())
+pub async fn dispatch_s3_call(request: S3Command) -> Result<Vec<u8>, &'static str> {
+    dispatch_host_call(request, s3_call).await
 }
 
 pub fn dispatch_ipfs_call(module_call: IPFSCommand, callback_fn: fn(Result<Vec<u8>, String>)) -> Result<(), &'static str> {
@@ -214,61 +195,85 @@ pub fn dispatch_ipfs_call(module_call: IPFSCommand, callback_fn: fn(Result<Vec<u
     Ok(())
 }
 
-async fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
 #[no_mangle]
 pub fn _start() {
-    // let config = S3Config {
-    //     access_key: "test".to_string(),
-    //     secret_key: "test".to_string(),
-    //     endpoint: "http://localhost:4566".to_string(),
-    //     region: None,
-    // };
-    // let s3_get = S3Command::S3Get(S3GetOpts {
-    //     config,
-    //     bucket_name: "my-new-bucket".to_string(),
-    //     path: "some/path/".to_string(),
-    // });
-    // dispatch_s3_call(s3_get, |response| {
-    //     log!("s3 callback hit!");
-    //     let res_str = String::from_utf8(response.unwrap()).unwrap();
-    //     log!("{:?}", res_str);
-    // });
-
     executor::spawn_local(async {
-        let sum = add(1, 5).await;
-        log!("sum: {}", sum);
-        
-        let response1 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get)).await;
-        log!("First http callback hit!");
-        log!("{:?}", response1);
+        let config = S3Config {
+            access_key: "test".to_string(),
+            secret_key: "test".to_string(),
+            endpoint: "http://localhost:4566".to_string(),
+            region: None,
+        };
 
-        let response2 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/2", Method::Get)).await;
-        log!("Second http callback hit!");
-        log!("{:?}", response2);
+        let result = dispatch_s3_call(S3Command::S3Create(S3CreateOpts {
+            config: config.clone(),
+            bucket_name: "my-new-bucket".to_string(),
+        })).await;
+        log!("s3 S3Create callback hit!");
+        let res_str = String::from_utf8(result.unwrap()).unwrap();
+        log!("{:?}", res_str);
 
-        let response3 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/3", Method::Get)).await;
-        log!("Third http callback hit!");
-        log!("{:?}", response3);
+        let result = dispatch_s3_call(S3Command::S3Put(S3PutOpts {
+            config: config.clone(),
+            bucket_name: "my-new-bucket".to_string(),
+            path: "some/path/hello.txt".to_string(),
+            content: "hello world".as_bytes().to_vec(),
+        })).await;
+        log!("s3 S3Put callback hit!");
+        let res_str = String::from_utf8(result.unwrap()).unwrap();
+        log!("{:?}", res_str);
 
-        let response4 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/4", Method::Get)).await;
-        log!("Fourth http callback hit!");
-        log!("{:?}", response4);
+        let result = dispatch_s3_call(S3Command::S3Get(S3GetOpts {
+            config: config.clone(),
+            bucket_name: "my-new-bucket".to_string(),
+            path: "some/path/hello.txt".to_string(),
+        })).await;
+        log!("s3 S3Get callback hit!");
+        let res_str = String::from_utf8(result.unwrap()).unwrap();
+        log!("{:?}", res_str);
 
-        let response5 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/5", Method::Get)).await;
-        log!("Fifth http callback hit!");
-        log!("{:?}", response5);
-
-        let response6 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/6", Method::Get)).await;
-        log!("Sixth http callback hit!");
-        log!("{:?}", response6);
-
-        let response7 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/7", Method::Get)).await;
-        log!("Seventh http callback hit!");
-        log!("{:?}", response7);
+        let result = dispatch_s3_call(S3Command::S3Delete(S3DeleteOpts {
+            config,
+            bucket_name: "my-new-bucket".to_string(),
+            path: "some/path/hello.txt".to_string(),
+        })).await;
+        log!("s3 S3Delete callback hit!");
+        let res_str = String::from_utf8(result.unwrap()).unwrap();
+        log!("{:?}", res_str);
     });
+        
+    // executor::spawn_local(async {
+    //     let sum = add(1, 5).await;
+    //     log!("sum: {}", sum);
+        
+    //     let response1 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/1", Method::Get)).await;
+    //     log!("First http callback hit!");
+    //     log!("{:?}", response1);
+
+    //     let response2 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/2", Method::Get)).await;
+    //     log!("Second http callback hit!");
+    //     log!("{:?}", response2);
+
+    //     let response3 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/3", Method::Get)).await;
+    //     log!("Third http callback hit!");
+    //     log!("{:?}", response3);
+
+    //     let response4 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/4", Method::Get)).await;
+    //     log!("Fourth http callback hit!");
+    //     log!("{:?}", response4);
+
+    //     let response5 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/5", Method::Get)).await;
+    //     log!("Fifth http callback hit!");
+    //     log!("{:?}", response5);
+
+    //     let response6 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/6", Method::Get)).await;
+    //     log!("Sixth http callback hit!");
+    //     log!("{:?}", response6);
+
+    //     let response7 = dispatch_http_call(HttpRequest::new("https://jsonplaceholder.typicode.com/todos/7", Method::Get)).await;
+    //     log!("Seventh http callback hit!");
+    //     log!("{:?}", response7);
+    // });
 }
 
 
