@@ -1,6 +1,5 @@
 
 use crate::{impl_display, impl_query_string_conversions};
-use crate::http::{HttpRequest, HttpResponse, Method};
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 

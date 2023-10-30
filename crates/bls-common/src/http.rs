@@ -117,7 +117,7 @@ impl_display!(HttpRequest);
 pub struct HttpResponse {
   pub status: u16,
   pub headers: HashMap<String, String>,
-  pub body: String,
+  pub body: Vec<u8>,
 }
 
 impl HttpResponse {
@@ -133,7 +133,7 @@ impl HttpResponse {
     Ok(HttpResponse {
       status,
       headers,
-      body: String::from_utf8(body.to_vec()).map_err(|_| "response body error")?,
+      body: body.to_vec(),
     })
   }
 }

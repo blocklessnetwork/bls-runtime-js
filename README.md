@@ -50,3 +50,12 @@ docker run \
   -p 4510-4559:4510-4559 \
   localstack/localstack
 ```
+
+### IPFS
+
+Run local IPFS node (with CORS):
+```sh
+docker run --rm -it --name ipfs-node -p 4001:4001 -p 5001:5001 --entrypoint sh ipfs/go-ipfs:latest
+/usr/local/bin/start_ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin "[\"*\"]"
+/usr/local/bin/start_ipfs daemon --migrate=true --agent-version-suffix=docker
+```
